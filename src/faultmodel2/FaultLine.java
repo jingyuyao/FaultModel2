@@ -4,6 +4,7 @@
  */
 package faultmodel2;
 
+import org.lwjgl.util.vector.Vector2f;
 import org.lwjgl.util.vector.Vector3f;
 
 /**
@@ -11,12 +12,12 @@ import org.lwjgl.util.vector.Vector3f;
  * @author Jingyu Yao
  */
 public class FaultLine {
-    public Vector3f[] fault;//public for easier access/modify
+    public Vector2f[] fault;//public for easier access/modify
     private Neighbors neighbors;
     private SubMesh m1, m2;
     
     public FaultLine(int length){
-        fault = new Vector3f[length];
+        fault = new Vector2f[length];
         findMeshes();
         neighbors = new Neighbors(this);
     }

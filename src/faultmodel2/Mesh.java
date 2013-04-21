@@ -10,6 +10,7 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import javax.imageio.ImageIO;
+import org.lwjgl.util.vector.Vector2f;
 import org.lwjgl.util.vector.Vector3f;
 
 /**
@@ -19,16 +20,16 @@ import org.lwjgl.util.vector.Vector3f;
 public class Mesh {
     private SubMesh[] meshes;
     private Vector3f[][] masterMesh;
-    private FaultLine[] faultLines;
+    private FaultLine[] faultLines;//Worry about 1 fault for now.. lol
     private int meshSize;//total points
     
-    public Mesh(int x, int y, int faults){
-        masterMesh = new Vector3f[x][y];
+    public Mesh(BufferedImage heightMap, BufferedImage faultMap, int faults){
         faultLines = new FaultLine[faults];
+        load(heightMap, faultMap);
     }
     
     //Load the mesh and all necessary information
-    public void load(BufferedImage heightMap){
+    private void load(BufferedImage heightMap, BufferedImage faultMap){
         //create masterMesh
         masterMesh = new Vector3f[heightMap.getWidth()][heightMap.getHeight()];
         meshSize = (heightMap.getWidth() - 1) * (heightMap.getHeight() - 1);
@@ -41,6 +42,14 @@ public class Mesh {
             }
         }
         
+        //Have to auto-load faults from a source
+        //For now, use manual input for testing
+        faultLines[0] = new FaultLine(513);
+        for(int index2 = 0; index2 < faultLines[0].fault.length; index2++){
+            faultLines[0].fault[index2] = new Vector2f(index2,index2);
+        }
+        
+        //Now load the SubMeshes using top-down method
         
     }
     

@@ -24,7 +24,7 @@ public class FaultModel {
      * @param args the command line arguments
      */
     public static void main(String[] args) {
-        
+        FaultModel mod = new FaultModel();
     }
     
     public FaultModel(){
@@ -36,11 +36,15 @@ public class FaultModel {
         try{
         //get the height map
         //String file = JOptionPane.showInputDialog("File path of heightmap(ex: MyDocuments/images/stuff.jpg):");
-        String file = "src/faultmodel/test.jpg";//current: Terrain2.bmp, test.jpg
-        heightMap = ImageIO.read(new File(file));
+        String heightMapFile = "src/faultmodel2/heightmap2.jpg";//current: Terrain2.bmp, test.jpg
+        heightMap = ImageIO.read(new File(heightMapFile));
+//        String faultMapFile = "src/faultmodel2/heightmap2f.jpg";
+//        faultMap = ImageIO.read(new File(faultMapFile));
+        faultMap = new BufferedImage(1,1,1);//just for testing
         }catch(HeadlessException | IOException e) {
             e.printStackTrace();
         }
+        mesh = new Mesh(heightMap,faultMap,1);
     }
     
     //Renders the model
