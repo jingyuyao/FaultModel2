@@ -17,6 +17,11 @@ public class SubMesh {
     //SubMesh's size should be same as masterMesh for convience
     public SubMesh(int x, int y){
         mesh = new Vector3f[x][y];
+        for(int i = 0; i < x; i++){
+            for(int j = 0; j < x; j++){
+                mesh[i][j] =new Vector3f(0f,0f,0f);
+            }
+        }
     }
     
     //Returns the border of this SubMesh to be used in Neighbors class

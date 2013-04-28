@@ -41,6 +41,7 @@ public class FaultModel {
 //        String faultMapFile = "src/faultmodel2/heightmap2f.jpg";
 //        faultMap = ImageIO.read(new File(faultMapFile));
         faultMap = new BufferedImage(1,1,1);//just for testing
+        
         }catch(HeadlessException | IOException e) {
             e.printStackTrace();
         }

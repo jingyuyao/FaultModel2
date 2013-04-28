@@ -19,13 +19,29 @@ import org.lwjgl.util.vector.Vector3f;
  */
 public class Mesh {
     private SubMesh[] meshes;
-    private Vector3f[][] masterMesh;
+    private Vector3f[][] masterMesh;//x is height, (y,z) is location
+    //faults should be ordered from center to top, then center to bottom
     private FaultLine[] faultLines;//Worry about 1 fault for now.. lol
     private int meshSize;//total points
     
     public Mesh(BufferedImage heightMap, BufferedImage faultMap, int faults){
         faultLines = new FaultLine[faults];
+        meshes = new SubMesh[faults + 1];//initialize array
+        //instantiate elements of array
+        for(int index = 0; index < faults + 1; index++){
+            meshes[index] = new SubMesh(heightMap.getWidth(),heightMap.getHeight());
+        }
+        
         load(heightMap, faultMap);
+        
+        
+        //testing
+        for(int i = 0; i < heightMap.getWidth(); i++){
+            for(int j = 0; j < heightMap.getHeight(); j++){
+                System.out.print(meshes[1].mesh[i][j].x + " ");
+            }
+            System.out.println();
+        }
     }
     
     //Load the mesh and all necessary information
@@ -49,8 +65,37 @@ public class Mesh {
             faultLines[0].fault[index2] = new Vector2f(index2,index2);
         }
         
-        //Now load the SubMeshes using top-down method
+        //Now load the SubMeshes using top-down method, manual input, two submesh
+        //pre-condition: faults are in "order"
+        boolean upOrBelow = true;
+        for(int index = 0; index < meshes.length; index++){
+            loadSubMeshes(meshes[index], upOrBelow, 0);
+            upOrBelow = !upOrBelow;
+        }
         
+    }
+    
+    //loadSubMeshes
+    //Current method only deal with a single faultline
+    //m: mesh to change, up: above faultline or below fault line, line: distinguishing faultline
+    private void loadSubMeshes(SubMesh m, boolean up, int line){
+        if(up){
+            for(int j = 0; j < masterMesh.length; j++){
+                for(int i = 0; i < masterMesh[0].length; i++){
+                    if(i <= faultLines[line].fault[j].y){
+                        m.mesh[i][j] = masterMesh[i][j];
+                    }
+                }
+            }
+        }else{
+            for(int j = 0; j < masterMesh.length; j++){
+                for(int i = 0; i < masterMesh[0].length; i++){
+                    if(i > faultLines[line].fault[j].y){
+                        m.mesh[i][j] = masterMesh[i][j];
+                    }
+                }
+            }
+        }
     }
     
     //Erosion algorithm
