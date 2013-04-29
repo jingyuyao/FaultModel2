@@ -27,21 +27,22 @@ public class Mesh {
     public Mesh(BufferedImage heightMap, BufferedImage faultMap, int faults){
         faultLines = new FaultLine[faults];
         meshes = new SubMesh[faults + 1];//initialize array
+        
         //instantiate elements of array
         for(int index = 0; index < faults + 1; index++){
-            meshes[index] = new SubMesh(heightMap.getWidth(),heightMap.getHeight());
+            meshes[index] = new SubMesh(heightMap.getWidth(),heightMap.getHeight(), new Vector3f(1f,0f,0f));
         }
         
         load(heightMap, faultMap);
-        
-        
+        move();
+        update();
         //testing
-        for(int i = 0; i < heightMap.getWidth(); i++){
-            for(int j = 0; j < heightMap.getHeight(); j++){
-                System.out.print(meshes[1].mesh[i][j].x + " ");
-            }
-            System.out.println();
-        }
+//                for(int i = 0; i < heightMap.getWidth(); i++){
+//                    for(int j = 0; j < heightMap.getHeight(); j++){
+//                        System.out.print(masterMesh[i][j].x + " ");
+//                    }
+//                    System.out.println();
+//                }
     }
     
     //Load the mesh and all necessary information
@@ -65,8 +66,8 @@ public class Mesh {
             faultLines[0].fault[index2] = new Vector2f(index2,index2);
         }
         
-        //Now load the SubMeshes using top-down method, manual input, two submesh
-        //pre-condition: faults are in "order"
+        //Now load the SubMeshes using top-down method
+        //only consider a single faultline
         boolean upOrBelow = true;
         for(int index = 0; index < meshes.length; index++){
             loadSubMeshes(meshes[index], upOrBelow, 0);
@@ -110,7 +111,23 @@ public class Mesh {
     
     //Move the submeshes
     public void move(){
-        
+        for(int index = 0; index < meshes.length; index++){
+            meshes[index].move();
+        }
+    }
+    
+    //update the value of each point but does not "reconnect" them
+    public void update(){
+        //System.arraycopy is boss but we need the conditional
+        for(int index = 0; index < meshes.length; index++){
+            for(int i = 0; i < meshes[index].mesh.length; i++){
+                for(int j = 0; j < meshes[index].mesh[0].length; j++){
+                    if(meshes[index].mesh[i][j].x != -1){
+                        masterMesh[i][j] = meshes[index].mesh[i][j];
+                    }
+                }
+            }
+        }
     }
     
     //Connect the SubMeshes and update masterMesh data

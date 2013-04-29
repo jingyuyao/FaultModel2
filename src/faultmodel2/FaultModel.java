@@ -36,7 +36,7 @@ public class FaultModel {
         try{
         //get the height map
         //String file = JOptionPane.showInputDialog("File path of heightmap(ex: MyDocuments/images/stuff.jpg):");
-        String heightMapFile = "src/faultmodel2/heightmap2.jpg";//current: Terrain2.bmp, test.jpg
+        String heightMapFile = "src/faultmodel2/test.jpg";//current: Terrain2.bmp, test.jpg
         heightMap = ImageIO.read(new File(heightMapFile));
 //        String faultMapFile = "src/faultmodel2/heightmap2f.jpg";
 //        faultMap = ImageIO.read(new File(faultMapFile));
