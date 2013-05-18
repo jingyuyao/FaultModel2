@@ -22,6 +22,7 @@ import java.util.Random;
  */
 public class Mesh {
     private SubMesh[] meshes;
+    private Point[] borders;
     private Vector3f[][] masterMesh;//x is height, (y,z) is location
     //faults should be ordered from center to top, then center to bottom
     private FaultLine[] faultLines;//Worry about 1 fault for now.. lol
@@ -240,8 +241,27 @@ public class Mesh {
     
     //FINISH ME~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     //Connect the SubMeshes and update masterMesh data
-    public Vector3f[][] connectMeshes(){
-        
-        return new Vector3f[1][1];
+    public void connectMeshes(){
+        for(int index = 0; index < meshes.length; index++){
+            int x = (int)meshes[index].mesh[1][1].x - 1;
+            int y = (int)meshes[index].mesh[1][1].y - 1;
+            if(x == 0 || y == 0){
+                return;//don waste resources
+            }
+            moveSub(meshes[index], new Point(x,y));
+        }
+    }
+    
+    private void moveSub(SubMesh m, Point p){
+        SubMesh temp = new SubMesh(m.mesh[0].length, m.mesh.length);
+        for(int i = 0; i < m.mesh[0].length; i++){
+            for(int j = 0; j < m.mesh.length; j++){
+                try{
+                    temp.mesh[i+p.x][j+p.y] = m.mesh[i][j];
+                }catch(Exception e){
+                    
+                }
+            }
+        }
     }
 }
