@@ -9,9 +9,12 @@ import java.awt.HeadlessException;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
 import javax.imageio.ImageIO;
 import org.lwjgl.util.vector.Vector2f;
 import org.lwjgl.util.vector.Vector3f;
+import java.awt.Point;
+import java.util.Random;
 
 /**
  *
@@ -24,6 +27,19 @@ public class Mesh {
     private FaultLine[] faultLines;//Worry about 1 fault for now.. lol
     private int meshSize;//total points
     
+    //Position tracker
+    private int posX = -1, posY = -1;
+    
+    private Random ran = new Random();
+    
+    //variables provided by Dr.Shaw
+    private float wk_fmin = 0.0f, wk_fmax = 0.3f, wk_slp = 2.0f;
+    private int wk_carrylength = 50;
+    private float wk_a = wk_fmax;
+    private float wk_c = (float) ((wk_fmax - wk_fmin) / (wk_fmax - 0.5 * wk_fmin) * wk_slp);
+    private float wk_b = wk_c * wk_fmin;
+    private float walker = 0;
+    
     public Mesh(BufferedImage heightMap, BufferedImage faultMap, int faults){
         faultLines = new FaultLine[faults];
         meshes = new SubMesh[faults + 1];//initialize array
@@ -34,15 +50,13 @@ public class Mesh {
         }
         
         load(heightMap, faultMap);
-        move();
-        update();
         //testing
-//                for(int i = 0; i < heightMap.getWidth(); i++){
-//                    for(int j = 0; j < heightMap.getHeight(); j++){
-//                        System.out.print(masterMesh[i][j].x + " ");
-//                    }
-//                    System.out.println();
-//                }
+        //                for(int i = 0; i < heightMap.getWidth(); i++){
+        //                    for(int j = 0; j < heightMap.getHeight(); j++){
+        //                        System.out.print(masterMesh[i][j].x + " ");
+        //                    }
+        //                    System.out.println();
+        //                }
     }
     
     //Load the mesh and all necessary information
@@ -100,13 +114,90 @@ public class Mesh {
     }
     
     //Erosion algorithm
-    public void erode(){
+    public Point erode(Point p){
+        //position of the point being evaluated
+        int i = p.x;
+        int j = p.y;
+        Vector3f vec = masterMesh[i][j];//vector at this point
+        float h = vec.x;//current height
+        float delx0;//displacement height
+        float[] deltaH = new float[8];//change in height for surrounding
+        float greatV;//greatest deltaH
+        float distance;//distance between points
+        Point nextP;//next point to process
+        Vector3f nextVec;//vector at next point
         
+        //get dealaH for 8 surrounding locations
+        //begin at top left, clock-wise
+        posClean();//reset posX and posY to -1
+        for(int index = 0; index < deltaH.length; index++){
+            try{
+                deltaH[index] = h - masterMesh[i + posX][j + posY].x;
+            }catch(Exception e){
+                deltaH[index] = -1;//-1 if point is out of bound
+            }
+            posNext();//increment posX and posY correctly
+        }
+        
+        //find largest deltaH & get pos to that location
+        posClean();
+        greatV = deltaH[0];
+        for(int index = 1; index < deltaH.length; index++){
+            if(deltaH[i] > greatV){
+                greatV = deltaH[i];
+                posNext();
+            }
+        }
+        
+        //all the info have been obtained, now its formula time
+        //all negative value = this vector is the highest
+        if(greatV < 0){
+            //since this is the lowest point
+            //dump all sediment in walker here
+            vec.setX(h + walker);
+            walker = 0;
+            
+            //return self
+            return p;
+        }else{
+            //setup next point to process/return
+            nextP = new Point(i + posX, j + posY);
+            //get the next vector to manupilate value
+            nextVec = masterMesh[nextP.x][nextP.y];
+            
+            distance = (float)Math.sqrt(Math.pow(i - nextVec.y,2) + Math.pow(j - nextVec.z,2));
+            
+            //add appropriate sediment to walker
+            walker += (wk_a * greatV + wk_b) / (greatV + wk_c) * greatV * (1/distance);
+            
+            //removent 1/wk_carrylength amount of sediment from walker to be changed
+            delx0 = (1/wk_carrylength) * walker;
+            walker -= delx0;
+            
+            //actually change the height of the vectors
+            vec.setX(h - delx0);
+            nextVec.setX(nextP.x + delx0);
+            
+            //move to another point to process
+            return nextP;
+        }
     }
     
     //Use the erode method to erode the mesh
     public void rain(){
+        //random x and y coordinate on the mesh
+        int i = ran.nextInt(masterMesh.length);
+        int j = ran.nextInt(masterMesh[1].length);
+        //initial random point
+        Point oldP = new Point(i,j);
+        //point after erode
+        Point nextPoint = erode(oldP);
         
+        //continues while nextPoint erode is different from oldP
+        while(!nextPoint.equals(oldP)){
+            oldP = new Point(nextPoint.x,nextPoint.y);
+            nextPoint = erode(oldP);
+        }
     }
     
     //Move the submeshes
@@ -130,6 +221,24 @@ public class Mesh {
         }
     }
     
+    //helper methods
+    private void posClean(){ posX = -1; posY = -1;}
+    
+    //clever position tracker for the loop =)
+    private void posNext(){
+        if(posX == 1){
+            posY++;
+            posX = -1;
+        }else{
+            posX++;
+        }
+        //skip the midpoint which is current location
+        if(posX == 0 && posY == 0){
+            posX = 1;
+        }
+    }
+    
+    //FINISH ME~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     //Connect the SubMeshes and update masterMesh data
     public Vector3f[][] connectMeshes(){
         
