@@ -23,10 +23,11 @@ import java.util.Random;
 public class Mesh {
     private SubMesh[] meshes;
     private Point[] borders;
-    private Vector3f[][] masterMesh;//x is height, (y,z) is location
+    public Vector3f[][] masterMesh;//x is height, (y,z) is location
     //faults should be ordered from center to top, then center to bottom
     private FaultLine[] faultLines;//Worry about 1 fault for now.. lol
     private int meshSize;//total points
+    public float max = 0;
     
     //Position tracker
     private int posX = -1, posY = -1;
@@ -35,11 +36,12 @@ public class Mesh {
     
     //variables provided by Dr.Shaw
     private float wk_fmin = 0.0f, wk_fmax = 0.3f, wk_slp = 2.0f;
-    private int wk_carrylength = 50;
+    private int wk_carrylength = 10;
     private float wk_a = wk_fmax;
     private float wk_c = (float) ((wk_fmax - wk_fmin) / (wk_fmax - 0.5 * wk_fmin) * wk_slp);
     private float wk_b = wk_c * wk_fmin;
     private float walker = 0;
+    
     
     public Mesh(BufferedImage heightMap, BufferedImage faultMap, int faults){
         faultLines = new FaultLine[faults];
@@ -58,6 +60,16 @@ public class Mesh {
         //                    }
         //                    System.out.println();
         //                }
+        
+        max = masterMesh[0][0].x;
+        
+        for(int i = 0; i < masterMesh[0].length; i++){
+            for(int j = 0; j < masterMesh.length; j++){
+                if(masterMesh[i][j].x > max){
+                    max = masterMesh[i][j].x;
+                }
+            }
+        }
     }
     
     //Load the mesh and all necessary information
@@ -144,29 +156,20 @@ public class Mesh {
         posClean();
         greatV = deltaH[0];
         for(int index = 1; index < deltaH.length; index++){
-            if(deltaH[i] > greatV){
-                greatV = deltaH[i];
+            if(deltaH[index] > greatV){
+                greatV = deltaH[index];
                 posNext();
             }
         }
         
         //all the info have been obtained, now its formula time
         //all negative value = this vector is the highest
-        if(greatV < 0){
-            //since this is the lowest point
-            //dump all sediment in walker here
-            vec.setX(h + walker);
-            walker = 0;
-            
-            //return self
-            return p;
-        }else{
+        if(greatV > 0 && i + posX != -1 && j + posY != -1 && i + posX != masterMesh[0].length && j + posY != masterMesh.length){
             //setup next point to process/return
             nextP = new Point(i + posX, j + posY);
             //get the next vector to manupilate value
             nextVec = masterMesh[nextP.x][nextP.y];
-            
-            distance = (float)Math.sqrt(Math.pow(i - nextVec.y,2) + Math.pow(j - nextVec.z,2));
+            distance = (float)Math.sqrt(Math.pow(vec.y - nextVec.y,2) + Math.pow(vec.y - nextVec.z,2));
             
             //add appropriate sediment to walker
             walker += (wk_a * greatV + wk_b) / (greatV + wk_c) * greatV * (1/distance);
@@ -177,10 +180,19 @@ public class Mesh {
             
             //actually change the height of the vectors
             vec.setX(h - delx0);
-            nextVec.setX(nextP.x + delx0);
+            nextVec.setX(nextVec.x + delx0);
             
             //move to another point to process
             return nextP;
+        }else{
+//            System.out.println("dumped:" + walker);
+            //since this is the lowest point
+            //dump all sediment in walker here
+            vec.setX(h + walker);
+            walker = 0;
+            
+            //return self
+            return p;
         }
     }
     
@@ -189,13 +201,14 @@ public class Mesh {
         //random x and y coordinate on the mesh
         int i = ran.nextInt(masterMesh.length);
         int j = ran.nextInt(masterMesh[1].length);
+        
         //initial random point
         Point oldP = new Point(i,j);
         //point after erode
         Point nextPoint = erode(oldP);
         
         //continues while nextPoint erode is different from oldP
-        while(!nextPoint.equals(oldP)){
+        while(nextPoint.x != oldP.x && nextPoint.y != oldP.y){
             oldP = new Point(nextPoint.x,nextPoint.y);
             nextPoint = erode(oldP);
         }

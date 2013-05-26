@@ -15,7 +15,7 @@ import org.lwjgl.util.vector.Vector3f;
 public class SubMesh {
     public Vector3f[][] mesh;//public for easier access/modify
     private Vector3f movement;
-    private Neighbors neighbors;
+//    private Neighbors neighbors;
     
     //SubMesh's size should be same as masterMesh
     //initial x value is -1 to be indentified as null
