@@ -22,6 +22,8 @@ import static org.lwjgl.util.glu.GLU.gluPerspective;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 import org.lwjgl.util.vector.Vector3f;
+import java.util.Timer;
+import java.util.TimerTask;
 
 
 /**
@@ -41,10 +43,13 @@ public class FaultModel {
             33.2f).setRotation(30, 61, 0).setAspectRatio(ASPECT_RATIO).setFieldOfView(60).build();
     
     private boolean rain = false;
+    private boolean move = false;
     
     private int heightmapDisplayList;
     private Shader shader;
     private int texture;
+    
+    private int moveSyncCounter = 0;
     
     /**
      * @param args the command line arguments
@@ -55,6 +60,8 @@ public class FaultModel {
     
     public FaultModel(){
         setUp();
+        mesh.meshes[0].setMovement(new Vector3f(0f,0.1f,0.1f));
+//        mesh.meshes[1].setMovement(new Vector3f(0f,-0.1f,0f));
         loop();
     }
     
@@ -68,6 +75,9 @@ public class FaultModel {
         //since shader use max height of the mesh
         mesh = new Mesh(heightMap,faultMap,1);
         setUpShader();
+        glDeleteLists(heightmapDisplayList, 1);
+        
+        heightmapDisplayList = glGenLists(1);
         
         draw();
     }
@@ -118,6 +128,9 @@ public class FaultModel {
                 if (Keyboard.getEventKey() == Keyboard.KEY_R){
                     rain = !rain;
                 }
+                if (Keyboard.getEventKey() == Keyboard.KEY_M){
+                    move = !move;
+                }
             }
         }
         if (Mouse.isButtonDown(0)) {
@@ -132,15 +145,44 @@ public class FaultModel {
     }
     
     private void loop(){
+        Timer time = new Timer();
+        //use timer to run tasks so it does not interfere with render
+        time.schedule(new TimerTask() {
+
+            @Override
+            public void run() {
+            }
+        }, 300);
+        
         while(!Display.isCloseRequested()){
             if(rain){
-                updateData(1,1);
+                mesh.rain();
+                draw();
             }
+            if(move){
+                
+                mesh.move();
+                moveSyncCounter++;
+                if(moveSyncCounter == 10){
+                    mesh.sync();
+                    moveSyncCounter = 0;
+                }
+                draw();
+            }
+            
             render();
             input();
             Display.update();
             Display.sync(60);
         }
+        
+        //close display at end of program
+        glUseProgram(0);
+        glDeleteProgram(shader.getProgram());
+        glBindTexture(GL_TEXTURE_2D, 0);
+        Display.destroy();
+        System.exit(0);
+        
     }
     
     //Renders the model
@@ -158,6 +200,7 @@ public class FaultModel {
     //This controls how much erode and move is called
     public void updateData(int erodeTime, int moveTime){
         mesh.rain();
+//        mesh.move();
         draw();
         
     }
@@ -169,7 +212,7 @@ public class FaultModel {
         
         glNewList(heightmapDisplayList, GL_COMPILE);
         // Scale back the display list so that its proportions are acceptable.
-        glScalef(0.2f, 0.1f, 0.2f);
+        glScalef(0.2f, 0.05f, 0.2f);
         // Iterate over the 'strips' of heightmap data.
         Vector3f p;
         for (int z = 0; z < mesh.masterMesh.length - 1; z++) {
@@ -200,7 +243,7 @@ public class FaultModel {
             faultMap = new BufferedImage(1,1,1);//just for testing
             
             //create stream
-            FileInputStream colorStream = new FileInputStream("src/faultmodel2/heightmap_lookup2.png");
+            FileInputStream colorStream = new FileInputStream("src/faultmodel2/lookup_3.png");
             PNGDecoder decoder = new PNGDecoder(colorStream);//use PNG image decoder
             //create a openGL bytebuffer to store PNG data
             ByteBuffer buffer = BufferUtils.createByteBuffer(4 * decoder.getHeight() * decoder.getWidth());

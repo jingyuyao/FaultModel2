@@ -15,6 +15,7 @@ import org.lwjgl.util.vector.Vector3f;
 public class SubMesh {
     public Vector3f[][] mesh;//public for easier access/modify
     private Vector3f movement;
+    private Vector3f displacement = new Vector3f();
 //    private Neighbors neighbors;
     
     //SubMesh's size should be same as masterMesh
@@ -26,7 +27,7 @@ public class SubMesh {
                 mesh[i][j] =new Vector3f(-1f,i,j);
             }
         }
-        movement = new Vector3f();
+        movement = new Vector3f(0,0,0);
     }
     
     //constructor with movement
@@ -34,10 +35,21 @@ public class SubMesh {
         mesh = new Vector3f[x][y];
         for(int i = 0; i < x; i++){
             for(int j = 0; j < y; j++){
-                mesh[i][j] =new Vector3f(-1f,0f,0f);
+                mesh[i][j] = new Vector3f(-1f,0f,0f);
             }
         }
         setMovement(m);
+    }
+    
+    public SubMesh(int x, int y, Vector3f m, Vector3f d){
+        mesh = new Vector3f[x][y];
+        for(int i = 0; i < x; i++){
+            for(int j = 0; j < y; j++){
+                mesh[i][j] = new Vector3f(-1f,0f,0f);
+            }
+        }
+        setMovement(m);
+        displacement = d;
     }
     
     //Returns the border of this SubMesh to be used in Neighbors class
@@ -62,6 +74,10 @@ public class SubMesh {
         movement = move;
     }
     
+    public Vector3f getMovement(){
+        return movement;
+    }
+    
     public void move(){
         for(int i = 0; i < mesh.length; i++){
             for(int j = 0; j < mesh[0].length; j++){
@@ -70,5 +86,10 @@ public class SubMesh {
                 }
             }
         }
+        Vector3f.add(movement, displacement, displacement);
+    }
+    
+    public Vector3f getDisplacement(){
+        return displacement;
     }
 }
