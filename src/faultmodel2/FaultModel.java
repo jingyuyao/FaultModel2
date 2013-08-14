@@ -60,7 +60,7 @@ public class FaultModel {
     
     public FaultModel(){
         setUp();
-        mesh.meshes[0].setMovement(new Vector3f(0f,0.1f,0.1f));
+        mesh.meshes[0].setMovement(new Vector3f(0f,0f,0.1f));
 //        mesh.meshes[1].setMovement(new Vector3f(0f,-0.1f,0f));
         loop();
     }

@@ -282,7 +282,7 @@ public class Mesh {
         }
     }
     
-    //FINISH ME~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    //SCRAPED
     //Connect the SubMeshes and update masterMesh data
     public void connectMeshes(){
         for(int index = 0; index < meshes.length; index++){
@@ -295,6 +295,7 @@ public class Mesh {
         }
     }
     
+    //SCRAPED
     private void moveSub(SubMesh m, Point p){
         SubMesh temp = new SubMesh(m.mesh[0].length, m.mesh.length);
         for(int i = 0; i < m.mesh[0].length; i++){
@@ -316,38 +317,52 @@ public class Mesh {
         for(int i = 0; i < meshes.length; i++){
             Vector3f.add(totalDisplacement, meshes[i].getDisplacement(), totalDisplacement);
         }
-        System.out.println(meshes[0].getDisplacement());
+//        System.out.println(meshes[0].getDisplacement());
         //if the displacement is 3.5+ it is 4
-        float xd,yd;
-        xd = totalDisplacement.y - (int)totalDisplacement.y;
-        yd = totalDisplacement.z - (int)totalDisplacement.z;
-        if(xd >= 0.5f)
-            xd = (int)totalDisplacement.y + 1;
-        else
-            xd = (int)totalDisplacement.y;
+        int xd,yd;//displacement in abs value
+        float x = Math.abs(totalDisplacement.y), y = Math.abs(totalDisplacement.z);
         
-        if(yd >= 0.5f)
-            yd = (int)totalDisplacement.z + 1;
-        else
-            yd = (int)totalDisplacement.z;
+        if(x - (int)x >= 0.5f){
+            xd = (int)x + 1;
+        }
+        else{
+            xd = (int)x;
+        }
         
+        if(y - (int)y >= 0.5f){
+            yd = (int)y + 1;
+        }
+        else{
+            yd = (int)y;
+        }
+//        System.out.println(xd + " " + yd);
         
         Vector3f[][] temp = new Vector3f[sizeY + (int)xd][sizeX + (int)yd];
-        
+        System.out.println(temp.length + " w" + temp[0].length);
         for(int i = 0; i < temp.length; i++){
             for(int j = 0; j < temp[0].length; j++){
                 temp[i][j] = new Vector3f(-1f,0f,0f);
             }
         }
         
+        boolean xCorrector = false, yCorrector = false;
         //variable to round
         int tx,ty;
-        float x,y;
+//        float x,y;
         
         for(int i = 0; i < masterMesh.length; i++){
             for(int j = 0; j < masterMesh[0].length; j++){
+                if(masterMesh[i][j].y < 0)
+                    xCorrector = true;
+                if(masterMesh[i][j].z < 0)
+                    yCorrector = true;
+                
                 x = masterMesh[i][j].y;
+                if(xCorrector)
+                    x += xd;//add abs displacement value to it dont go out of bound
                 y = masterMesh[i][j].z;
+                if(yCorrector)
+                    y += yd;
                 
                 if(x - (int)x >= 0.5f)
                     tx = (int)x + 1;
@@ -368,6 +383,7 @@ public class Mesh {
         for(int index = 0; index < meshes.length; index++){
             meshes[index] = new SubMesh(masterMesh.length, masterMesh[0].length, meshes[index].getMovement(), meshes[index].getDisplacement());
         }
+        System.out.println(meshes[0].mesh.length + " s w" + meshes[0].mesh[0].length);
         
         //Now load the SubMeshes using top-down method
         //only consider a single faultline
