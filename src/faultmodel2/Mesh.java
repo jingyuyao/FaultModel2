@@ -14,6 +14,7 @@ import javax.imageio.ImageIO;
 import org.lwjgl.util.vector.Vector2f;
 import org.lwjgl.util.vector.Vector3f;
 import java.awt.Point;
+import java.util.ArrayList;
 import java.util.Random;
 
 /**
@@ -26,6 +27,11 @@ public class Mesh {
     public Vector3f[][] masterMesh;//x is height, (y,z) is location
     //faults should be ordered from center to top, then center to bottom
     private FaultLine[] faultLines;//Worry about 1 fault for now.. lol
+    private Vector2f faultVector;
+    
+    public ArrayList<Vector3f> rainStrip;
+    
+    
     private int meshSize;//total points
     public float max = 0;
     
@@ -35,6 +41,8 @@ public class Mesh {
     private int posX = -1, posY = -1;
     
     private Random ran = new Random();
+    
+    private final int infiniteLoopStopper = 200;
     
     //variables provided by Dr.Shaw
     private float wk_fmin = 0.0f, wk_fmax = 0.3f, wk_slp = 2.0f;
@@ -92,6 +100,7 @@ public class Mesh {
             }
         }
         
+        
         //Have to auto-load faults from a source
         //For now, use manual input for testing
         faultLines[0] = new FaultLine(513);
@@ -101,12 +110,16 @@ public class Mesh {
         
         //Now load the SubMeshes using top-down method
         //only consider a single faultline
-        boolean upOrBelow = true;
-        for(int index = 0; index < meshes.length; index++){
-            loadSubMeshes(meshes[index], upOrBelow, 0);
-            upOrBelow = !upOrBelow;
-        }
+//        boolean upOrBelow = true;
+//        for(int index = 0; index < meshes.length; index++){
+//            loadSubMeshes(meshes[index], upOrBelow, 0);
+//            upOrBelow = !upOrBelow;
+//        }
         
+        //test new method of spliting faults
+        faultVector = new Vector2f(1,1);
+        
+        loadSubMeshesV2();
     }
     
     //loadSubMeshes
@@ -130,6 +143,31 @@ public class Mesh {
                 }
             }
         }
+    }
+    
+    //using the faultVector to split the masterMesh, still top-down method
+    private void loadSubMeshesV2(){
+        Vector2f cur;
+        Vector3f p;
+        
+//        int upCounter = 0, downCounter = 0;
+        for(int j = 0; j < masterMesh.length; j++){
+            for(int i = 0; i < masterMesh[0].length; i++){
+                if(masterMesh[i][j].x != -1){
+                    cur = new Vector2f(faultVector.x * i, faultVector.y * i);
+                    p = masterMesh[i][j];
+                    if(p.z > cur.y){
+                        meshes[0].mesh[i][j] = p;
+//                        upCounter++;
+                    }else{
+                        meshes[1].mesh[i][j] = p;
+//                        downCounter++;
+                    }
+                }
+            }
+        }
+        //System.out.println(upCounter + " " + downCounter);
+        
     }
     
     //Erosion algorithm
@@ -227,19 +265,30 @@ public class Mesh {
     
     //Use the erode method to erode the mesh
     public void rain(){
+        //Used to trace the rain during rendering
+//        rainStrip = new ArrayList<>();//set to null by FaultModel
+        int rainCounter = 0;
+        
         //random x and y coordinate on the mesh
         int i = ran.nextInt(masterMesh.length);
         int j = ran.nextInt(masterMesh[1].length);
         
         //initial random point
         Point oldP = new Point(i,j);
+        rainStrip.add(masterMesh[i][j]);
         //point after erode
         Point nextPoint = erode(oldP);
-        
+        rainStrip.add(masterMesh[nextPoint.x][nextPoint.y]);
         //continues while nextPoint erode is different from oldP
-        while(nextPoint.x != oldP.x && nextPoint.y != oldP.y){
+        while(nextPoint.x != oldP.x && nextPoint.y != oldP.y && rainCounter < infiniteLoopStopper){
             oldP = new Point(nextPoint.x,nextPoint.y);
             nextPoint = erode(oldP);
+            rainStrip.add(masterMesh[nextPoint.x][nextPoint.y]);
+            rainCounter++;
+        }
+        if(rainCounter > 200){
+            System.out.println("Inf loop stopped");
+            System.out.println(rainStrip);
         }
     }
     
@@ -312,11 +361,13 @@ public class Mesh {
     //change where the points are located in the masterMesh grid to
     //reflect their actual position
     public void sync(){
+        //total movement of the submeshes
         Vector3f totalDisplacement = new Vector3f();
         
         for(int i = 0; i < meshes.length; i++){
             Vector3f.add(totalDisplacement, meshes[i].getDisplacement(), totalDisplacement);
         }
+//        System.out.println(totalDisplacement);
 //        System.out.println(meshes[0].getDisplacement());
         //if the displacement is 3.5+ it is 4
         int xd,yd;//displacement in abs value
@@ -336,6 +387,13 @@ public class Mesh {
             yd = (int)y;
         }
 //        System.out.println(xd + " " + yd);
+        
+        //current solution is to make the mesh always a square
+        //simplification is possible*****
+        if(xd > yd)
+            yd = xd;
+        else
+            xd = yd;
         
         Vector3f[][] temp = new Vector3f[sizeY + (int)xd][sizeX + (int)yd];
         System.out.println(temp.length + " w" + temp[0].length);
@@ -387,11 +445,11 @@ public class Mesh {
         
         //Now load the SubMeshes using top-down method
         //only consider a single faultline
-        boolean upOrBelow = true;
-        for(int index = 0; index < meshes.length; index++){
-            loadSubMeshes(meshes[index], upOrBelow, 0);
-            upOrBelow = !upOrBelow;
-        }
-        
+//        boolean upOrBelow = true;
+//        for(int index = 0; index < meshes.length; index++){
+//            loadSubMeshes(meshes[index], upOrBelow, 0);
+//            upOrBelow = !upOrBelow;
+//        }
+        loadSubMeshesV2();
     }
 }

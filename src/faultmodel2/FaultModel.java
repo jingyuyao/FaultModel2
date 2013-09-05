@@ -11,6 +11,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import javax.imageio.ImageIO;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.LWJGLException;
@@ -51,6 +52,11 @@ public class FaultModel {
     
     private int moveSyncCounter = 0;
     
+    private int programID;
+    
+    private ArrayList[] rainTrace = new ArrayList[10];
+    private int rainTraceNum = 0;
+    
     /**
      * @param args the command line arguments
      */
@@ -60,8 +66,9 @@ public class FaultModel {
     
     public FaultModel(){
         setUp();
-        mesh.meshes[0].setMovement(new Vector3f(0f,0f,0.1f));
-//        mesh.meshes[1].setMovement(new Vector3f(0f,-0.1f,0f));
+        //somehow the precision can only be .1
+        mesh.meshes[0].setMovement(new Vector3f(0f,0.01f,0.01f));
+        //        mesh.meshes[1].setMovement(new Vector3f(0f,0.05f,0.05f));
         loop();
     }
     
@@ -102,7 +109,7 @@ public class FaultModel {
     
     private void setUpStates() {
         camera.applyOptimalStates();
-        glPointSize(2);
+        glPointSize(4);
         // Enable the sorting of shapes from far to near
         glEnable(GL_DEPTH_TEST);
         // Set the background to a blue sky colour
@@ -131,6 +138,10 @@ public class FaultModel {
                 if (Keyboard.getEventKey() == Keyboard.KEY_M){
                     move = !move;
                 }
+                if (Keyboard.getEventKey() == Keyboard.KEY_N){
+                    mesh.sync();
+                }
+                
             }
         }
         if (Mouse.isButtonDown(0)) {
@@ -148,25 +159,27 @@ public class FaultModel {
         Timer time = new Timer();
         //use timer to run tasks so it does not interfere with render
         time.schedule(new TimerTask() {
-
+            
             @Override
             public void run() {
             }
-        }, 300);
+        }, 0);
         
         while(!Display.isCloseRequested()){
+            
             if(rain){
                 mesh.rain();
                 draw();
+                
             }
             if(move){
                 
                 mesh.move();
-                moveSyncCounter++;
-                if(moveSyncCounter == 10){
-                    mesh.sync();
-                    moveSyncCounter = 0;
-                }
+                //                moveSyncCounter++;
+                //                if(moveSyncCounter == 1000){
+                //                    mesh.sync();
+                //                    moveSyncCounter = 0;
+                //                }
                 draw();
             }
             
@@ -195,12 +208,40 @@ public class FaultModel {
         camera.applyTranslations();
         // Render the heightmap using the shaders that are being used
         glCallList(heightmapDisplayList);
+        
+        if(mesh.rainStrip != null && !mesh.rainStrip.isEmpty()){
+            rainTrace[rainTraceNum] = mesh.rainStrip;
+            if(rainTraceNum == 9){
+                rainTraceNum = 0;
+            }else{
+                rainTraceNum++;
+            }
+        }
+        
+        glUseProgram(0);
+        Vector3f v;
+//        glPointSize(4);
+        for(int n = 0; n < rainTrace.length; n++){
+            if(rainTrace[n] != null){
+                glBegin(GL_LINE_STRIP);
+                glColor3f(1f,0f,0f);
+                for(int i = 0; i < rainTrace[n].size(); i++){
+                    v = (Vector3f) rainTrace[n].get(i);
+                    
+                    glVertex3f(v.z, v.x, v.y);
+                }
+                glEnd();
+            }
+        }
+//        glPointSize(2);
+        glUseProgram(programID);
+        mesh.rainStrip = new ArrayList<>();
     }
     
     //This controls how much erode and move is called
     public void updateData(int erodeTime, int moveTime){
         mesh.rain();
-//        mesh.move();
+        //        mesh.move();
         draw();
         
     }
@@ -229,6 +270,7 @@ public class FaultModel {
             }
             glEnd();
         }
+        
         glEndList();
     }
     
@@ -243,7 +285,7 @@ public class FaultModel {
             faultMap = new BufferedImage(1,1,1);//just for testing
             
             //create stream
-            FileInputStream colorStream = new FileInputStream("src/faultmodel2/lookup_3.png");
+            FileInputStream colorStream = new FileInputStream("src/faultmodel2/lookup_5.png");
             PNGDecoder decoder = new PNGDecoder(colorStream);//use PNG image decoder
             //create a openGL bytebuffer to store PNG data
             ByteBuffer buffer = BufferUtils.createByteBuffer(4 * decoder.getHeight() * decoder.getWidth());
@@ -266,7 +308,7 @@ public class FaultModel {
         glEnable(GL_CULL_FACE);
         
         shader = new Shader("src/faultmodel2/shader.vert", "src/faultmodel2/shader.frag");
-        int programID = shader.getProgram();
+        programID = shader.getProgram();
         glLinkProgram(programID);
         glValidateProgram(programID);
         glUseProgram(programID);
