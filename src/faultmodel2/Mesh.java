@@ -35,6 +35,8 @@ public class Mesh {
     private int meshSize;//total points
     public float max = 0;
     
+    public int erodeCounter = 0;
+    
     private int sizeX, sizeY;
     
     //Position tracker
@@ -185,7 +187,6 @@ public class Mesh {
         Vector3f nextVec;//vector at next point
         boolean inBound;
         
-//        System.out.println(i + " " + j);
         //get dealaH for 8 surrounding locations
         //begin at top left, clock-wise
         posClean();//reset posX and posY to -1
@@ -225,8 +226,15 @@ public class Mesh {
                 nextP = new Point(i + posX, j + posY);
                 //get the next vector to manupilate value
                 nextVec = masterMesh[nextP.x][nextP.y];
-                distance = (float)Math.sqrt(Math.pow(vec.y - nextVec.y,2) + Math.pow(vec.z - nextVec.z,2));
+                distance = (float)Math.sqrt(Math.pow(vec.y - nextVec.y,2) + Math.pow(vec.z - nextVec.z,2) + Math.pow(vec.x - nextVec.x,2));
                 
+                //time to spice up wk_slp
+                float run = (float)Math.sqrt(Math.pow(vec.y - nextVec.y,2) + Math.pow(vec.z - nextVec.z,2));
+                float rise = vec.x - nextVec.x;
+                wk_slp = Math.abs(rise/run);
+                
+                //The try statement prevents stupid things from happening, i.e distance = 0
+                try{
                 //add appropriate sediment to walker
                 walker += (wk_a * greatV + wk_b) / (greatV + wk_c) * greatV * (1/distance);
                 
@@ -234,8 +242,10 @@ public class Mesh {
                 //I AM SO DUMB!~!!! CANNOT BELIEVE I MADE CARRYLENGTH AN INTEGER!!!!! FML
                 delx0 = walker * (1/wk_carrylength);
                 walker -= delx0;
-                
-                System.out.println("dis " + distance + " greatV " + greatV + " walker " + walker + " delx0 " + delx0);
+                }catch(NumberFormatException e){
+                    return p;
+                }
+//                System.out.println("dis " + distance + " greatV " + greatV + " walker " + walker + " delx0 " + delx0);
                 //actually change the height of the vectors
                 vec.setX(h - delx0);
                 nextVec.setX(nextVec.x + delx0);
@@ -251,12 +261,12 @@ public class Mesh {
                 if(Math.abs(greatV) > walker){
                     vec.setX(h + walker);
                     walker = 0;
-                    System.out.println("fill");
+//                    System.out.println("fill");
                     return p;
                 }else{
                     delx0 = Math.abs(greatV);
                     walker -= delx0;
-                    System.out.println("cover");
+//                    System.out.println("cover");
                     vec.setX(h + delx0);
                     return nextP;
                 }
@@ -296,6 +306,9 @@ public class Mesh {
             System.out.println("Inf loop stopped");
             System.out.println(rainStrip);
         }
+        walker = 0;
+        
+        erodeCounter++;
     }
     
     //Move the submeshes
@@ -334,33 +347,6 @@ public class Mesh {
         //skip the midpoint which is current location
         if(posX == 0 && posY == 0){
             posX = 1;
-        }
-    }
-    
-    //SCRAPED
-    //Connect the SubMeshes and update masterMesh data
-    public void connectMeshes(){
-        for(int index = 0; index < meshes.length; index++){
-            int x = (int)meshes[index].mesh[1][1].x - 1;
-            int y = (int)meshes[index].mesh[1][1].y - 1;
-            if(x == 0 || y == 0){
-                return;//don waste resources
-            }
-            moveSub(meshes[index], new Point(x,y));
-        }
-    }
-    
-    //SCRAPED
-    private void moveSub(SubMesh m, Point p){
-        SubMesh temp = new SubMesh(m.mesh[0].length, m.mesh.length);
-        for(int i = 0; i < m.mesh[0].length; i++){
-            for(int j = 0; j < m.mesh.length; j++){
-                try{
-                    temp.mesh[i+p.x][j+p.y] = m.mesh[i][j];
-                }catch(Exception e){
-                    
-                }
-            }
         }
     }
     
@@ -458,4 +444,37 @@ public class Mesh {
         //        }
         loadSubMeshesV2();
     }
+    
+    
+    
+    
+    
+    
+    //SCRAPED
+    //Connect the SubMeshes and update masterMesh data
+    public void connectMeshes(){
+        for(int index = 0; index < meshes.length; index++){
+            int x = (int)meshes[index].mesh[1][1].x - 1;
+            int y = (int)meshes[index].mesh[1][1].y - 1;
+            if(x == 0 || y == 0){
+                return;//don waste resources
+            }
+            moveSub(meshes[index], new Point(x,y));
+        }
+    }
+    
+    //SCRAPED
+    private void moveSub(SubMesh m, Point p){
+        SubMesh temp = new SubMesh(m.mesh[0].length, m.mesh.length);
+        for(int i = 0; i < m.mesh[0].length; i++){
+            for(int j = 0; j < m.mesh.length; j++){
+                try{
+                    temp.mesh[i+p.x][j+p.y] = m.mesh[i][j];
+                }catch(Exception e){
+                    
+                }
+            }
+        }
+    }
+    
 }
