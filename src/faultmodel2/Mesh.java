@@ -28,14 +28,16 @@ public class Mesh {
     //faults should be ordered from center to top, then center to bottom
     private FaultLine[] faultLines;//Worry about 1 fault for now.. lol
     private Vector2f faultVector;
-    
+    float iniMass;
     public ArrayList<Vector3f> rainStrip;
     
     
     private int meshSize;//total points
     public float max = 0;
     
-    public int erodeCounter = 0;
+    public int erodeCounter = 0, diffuseCounter = 0, outBoundCounter = 0, numException = 0;
+    public int infLoop = 0, normRain = 0, normErode = 0, cover = 0, fill = 0;
+    public float totalMassShift = 0.0f, massTaken = 0.0f, massDrop = 0.0f;
     
     private int sizeX, sizeY;
     
@@ -46,9 +48,11 @@ public class Mesh {
     
     private final int infiniteLoopStopper = 200;
     
+    private final int numberOfErodePerDiffuse = 5;//easy to be divided plz
+    
     //variables provided by Dr.Shaw
     private float wk_fmin = 0.0f, wk_fmax = 0.3f, wk_slp = 2.0f;
-    private float wk_carrylength = 2;
+    private float wk_carrylength = 50;
     private float wk_a = wk_fmax;
     private float wk_c = (float) ((wk_fmax - wk_fmin) / (wk_fmax - 0.5 * wk_fmin) * wk_slp);
     private float wk_b = wk_c * wk_fmin;
@@ -82,6 +86,7 @@ public class Mesh {
                 }
             }
         }
+        iniMass = totalMass();
     }
     
     //Load the mesh and all necessary information
@@ -173,54 +178,34 @@ public class Mesh {
     }
     
     //Erosion algorithm
-    public Point erode(Point p){
+    private Point erode(Point p, boolean diffuse){
         //position of the point being evaluated
         int i = p.x;
         int j = p.y;
         Vector3f vec = masterMesh[i][j];//vector at this point
         float h = vec.x;//current height
         float delx0;//displacement height
-        float[] deltaH = new float[8];//change in height for surrounding
+        float delx1;//sediment added to walker
+        float[] deltaH;//change in height for surrounding
         float greatV;//greatest deltaH
         float distance;//distance between points
         Point nextP;//next point to process
         Vector3f nextVec;//vector at next point
         boolean inBound;
         
-        //get dealaH for 8 surrounding locations
-        //begin at top left, clock-wise
-        posClean();//reset posX and posY to -1
-        for(int index = 0; index < deltaH.length; index++){
-            try{
-                deltaH[index] = h - masterMesh[i + posX][j + posY].x;
-            }catch(Exception e){
-                deltaH[index] = -1;//-1 if point is out of bound
-            }
-            posNext();//increment posX and posY correctly
-        }
+        deltaH = getDeltaH(h,i,j);
         
-        //find largest deltaH
-        posClean();
-        greatV = deltaH[0];
-        int spot = 0;
-        for(int index = 1; index < deltaH.length; index++){
-            if(deltaH[index] > greatV){
-                greatV = deltaH[index];
-                spot = index;
-            }
-        }
-        //get pos to that location
-        for(int as = 0; as < spot; as++)
-            posNext();
+        greatV = getGreatV(deltaH, diffuse);
         
-        if(i + posX != -1 && j + posY != -1 && i + posX != masterMesh[0].length && j + posY != masterMesh.length)
-            inBound = true;
-        else
-            inBound = false;
+//        if(greatV != -100 && (i + posX != -1 && j + posY != -1 && i + posX != masterMesh[0].length && j + posY != masterMesh.length))
+//            inBound = true;
+//        else
+//            inBound = false;
         
         //all the info have been obtained, now its formula time
         //all negative value = this vector is the highest
-        if(inBound){
+//        if(inBound){
+            //if its not the lowest
             if(greatV > 0){
                 //setup next point to process/return
                 nextP = new Point(i + posX, j + posY);
@@ -235,55 +220,129 @@ public class Mesh {
                 
                 //The try statement prevents stupid things from happening, i.e distance = 0
                 try{
-                //add appropriate sediment to walker
-                walker += (wk_a * greatV + wk_b) / (greatV + wk_c) * greatV * (1/distance);
-                
-                //removent 1/wk_carrylength amount of sediment from walker to be changed
-                //I AM SO DUMB!~!!! CANNOT BELIEVE I MADE CARRYLENGTH AN INTEGER!!!!! FML
-                delx0 = walker * (1/wk_carrylength);
-                walker -= delx0;
+                    wk_c = (float) ((wk_fmax - wk_fmin) / (wk_fmax - 0.5 * wk_fmin) * wk_slp);
+                    //add appropriate sediment to walker
+                    delx0 = (wk_a * greatV + wk_b) / (greatV + wk_c) * greatV * (1/distance);
+                    walker += delx0;
+                    //remove 1/wk_carrylength amount of sediment from walker to be changed
+                    //I AM SO DUMB!~!!! CANNOT BELIEVE I MADE CARRYLENGTH AN INTEGER!!!!! FML
+                    delx1 = walker * (1/wk_carrylength);
+                    walker -= delx1;
+                    totalMassShift += delx1;
+                    //                System.out.println("dis " + distance + " greatV " + greatV + " walker " + walker + " delx0 " + delx0);
+                    //actually change the height of the vectors
+                    vec.setX(h - delx0);
+                    massTaken += delx0;
+                    nextVec.setX(nextVec.x + delx1);
+                    massDrop += delx1;
+                    normErode++;
+                    //                    System.out.println(taker + " delx " + delx0);
+                    //move to another point to process
+                    return nextP;
                 }catch(NumberFormatException e){
+                    numException++;
                     return p;
                 }
-//                System.out.println("dis " + distance + " greatV " + greatV + " walker " + walker + " delx0 " + delx0);
-                //actually change the height of the vectors
-                vec.setX(h - delx0);
-                nextVec.setX(nextVec.x + delx0);
-                //move to another point to process
-                return nextP;
+                
             }
-            else{
+            else{//else if it is the lowest point
                 //setup next point to process/return
                 nextP = new Point(i + posX, j + posY);
-                
                 //dump just a little more than the lowestest point so walker can
                 //keep going
                 if(Math.abs(greatV) > walker){
                     vec.setX(h + walker);
+                    massDrop += walker;
+                    totalMassShift += walker;
+                    //                    System.out.println(walker);
                     walker = 0;
-//                    System.out.println("fill");
+                    cover++;
                     return p;
-                }else{
+                }
+                else{
                     delx0 = Math.abs(greatV);
+                    //                    System.out.println(walker);
                     walker -= delx0;
-//                    System.out.println("cover");
+                    
+                    float littleMore = (float)(0.1 * walker);
+                    
+                    delx0 += littleMore;
+                    walker -= littleMore;
+                    totalMassShift += delx0;
+                    
+                    fill++;
                     vec.setX(h + delx0);
+                    massDrop += delx0;
                     return nextP;
                 }
             }
+            
+//        }else{
+//            vec.setX(h + walker);
+//            massDrop += walker;
+//            walker = 0;
+//            outBoundCounter++;
+//            return p;
+//        }
+    }
+    
+    //return the change in height of the surrounding in an array
+    private float[] getDeltaH(float h, int i, int j){
+        float[] deltaH = new float[8];
+        //get dealaH for 8 surrounding locations
+        //begin at top left, clock-wise
+        posClean();//reset posX and posY to -1
+        for(int index = 0; index < deltaH.length; index++){
+            try{
+                if(masterMesh[i + posX][j + posY].x != -1f){
+                    deltaH[index] = h - masterMesh[i + posX][j + posY].x;//negative means higher
+                }else{
+                    deltaH[index] = -100;
+                }
+            }catch(Exception e){
+                deltaH[index] = -100;//-100 if point is out of bound
+            }
+            posNext();//increment posX and posY correctly
         }
-        vec.setX(h + walker);
-        walker = 0;
-        System.out.println("out of bound:" + p);
-        return p;
+        return deltaH;
+    }
+    
+    //find the greatest value in the array
+    //choose a random value if diffuse is true
+    //maintain posX and posY values
+    private float getGreatV(float[] deltaH, boolean diffuse){
+        //find largest deltaH
+        //***********This also made it impossible to go out of bound***************
+        float greatV = deltaH[0];
+        int spot = 0;
+        if(!diffuse){
+            for(int index = 1; index < deltaH.length; index++){
+                if(deltaH[index] > greatV){
+                    greatV = deltaH[index];
+                    spot = index;
+                }
+            }
+        }else{
+            do{
+                spot = ran.nextInt(8);
+                greatV = deltaH[spot];
+            }while(greatV == -100);
+        }
+        
+        posClean();
+        //get pos to that location
+        for(int as = 0; as < spot; as++)
+            posNext();
+        
+        return greatV;
     }
     
     //Use the erode method to erode the mesh
     public void rain(){
         //Used to trace the rain during rendering
         //        rainStrip = new ArrayList<>();//set to null by FaultModel
-        int rainCounter = 0;
-        
+        int loopCounter = 0;
+        rainStrip = new ArrayList<>();
         //random x and y coordinate on the mesh
         int i = ran.nextInt(masterMesh.length);
         int j = ran.nextInt(masterMesh[1].length);
@@ -292,23 +351,81 @@ public class Mesh {
         Point oldP = new Point(i,j);
         rainStrip.add(masterMesh[i][j]);
         //point after erode
-        Point nextPoint = erode(oldP);
+        Point nextPoint = erode(oldP, false);
         rainStrip.add(masterMesh[nextPoint.x][nextPoint.y]);
         //continues while nextPoint erode is different from oldP
-        while(nextPoint.x != oldP.x && nextPoint.y != oldP.y && rainCounter <= infiniteLoopStopper){
+        while(nextPoint.x != oldP.x && nextPoint.y != oldP.y && loopCounter <= infiniteLoopStopper){
             oldP = new Point(nextPoint.x,nextPoint.y);
-            nextPoint = erode(oldP);
+            if(erodeCounter % numberOfErodePerDiffuse == 0){
+                nextPoint = erode(oldP, true);
+//                diffuse(oldP, false);
+//                nextPoint = erode(oldP, false);
+                diffuseCounter++;
+            }else{
+                nextPoint = erode(oldP, false);
+            }
             rainStrip.add(masterMesh[nextPoint.x][nextPoint.y]);
-            rainCounter++;
+            loopCounter++;
         }
-//        System.out.println(rainCounter);
-        if(rainCounter >= 200){
-            System.out.println("Inf loop stopped");
-            System.out.println(rainStrip);
+        //        System.out.println(rainCounter);
+        if(loopCounter >= infiniteLoopStopper){
+            infLoop++;
+        }else{
+            normRain++;
         }
-        walker = 0;
+        //        walker = 0;
         
         erodeCounter++;
+        
+        FaultModel.rainTrace[FaultModel.rainTraceNum] = rainStrip;
+        if(FaultModel.rainTraceNum == FaultModel.rainTrace.length - 1){
+            FaultModel.rainTraceNum = 0;
+        }else{
+            FaultModel.rainTraceNum++;
+        }
+        //        System.out.println(walker);
+    }
+    
+    //this doesnt work
+    public void diffuse(Point p, boolean eightWay){
+        int i = p.x;
+        int j = p.y;
+        Vector3f vec = masterMesh[i][j];//vector at this point
+        float diffuseAmount = (1/wk_carrylength) * walker;
+        walker -= diffuseAmount;
+        
+        posClean();
+        if(!eightWay){
+            posNext();
+            float perNeighbor = (0.25f * diffuseAmount);
+            for(int abc = 0; abc < 4; abc++){
+                try{
+                    if(masterMesh[i + posX][j + posY].x != -1){
+                        masterMesh[i + posX][j + posY].x += perNeighbor;
+                    }else{
+                        walker += perNeighbor;
+                    }
+                }catch(Exception e){
+                    walker += perNeighbor;
+                }
+                posNext();
+                posNext();
+            }
+        }else{
+            float perNeighbor = diffuseAmount / 8f;
+            for(int abc = 0; abc < 8; abc++){
+                try{
+                    if(masterMesh[i + posX][j + posY].x != -1){
+                        masterMesh[i + posX][j + posY].x += perNeighbor;
+                    }else{
+                        walker += perNeighbor;
+                    }
+                }catch(Exception e){
+                    walker += perNeighbor;
+                }
+                posNext();
+            }
+        }
     }
     
     //Move the submeshes
@@ -320,7 +437,7 @@ public class Mesh {
     }
     
     //update the value of each point but does not "reconnect" them
-    public void update(){
+    private void update(){
         //System.arraycopy is boss but we need the conditional
         for(int index = 0; index < meshes.length; index++){
             for(int i = 0; i < meshes[index].mesh.length; i++){
@@ -388,10 +505,11 @@ public class Mesh {
             xd = yd;
         
         Vector3f[][] temp = new Vector3f[sizeY + (int)xd][sizeX + (int)yd];
-        System.out.println(temp.length + " w" + temp[0].length);
+        //        System.out.println(temp.length + " w" + temp[0].length);
         for(int i = 0; i < temp.length; i++){
             for(int j = 0; j < temp[0].length; j++){
-                temp[i][j] = new Vector3f(-1f,0f,0f);
+                //                                temp[i][j] = new Vector3f(-1f,0f,0f);
+                temp[i][j] = new Vector3f(-1f,i,j);
             }
         }
         
@@ -402,52 +520,101 @@ public class Mesh {
         
         for(int i = 0; i < masterMesh.length; i++){
             for(int j = 0; j < masterMesh[0].length; j++){
-                if(masterMesh[i][j].y < 0)
-                    xCorrector = true;
-                if(masterMesh[i][j].z < 0)
-                    yCorrector = true;
-                
-                x = masterMesh[i][j].y;
-                if(xCorrector)
-                    x += xd;//add abs displacement value to it dont go out of bound
-                y = masterMesh[i][j].z;
-                if(yCorrector)
-                    y += yd;
-                
-                if(x - (int)x >= 0.5f)
-                    tx = (int)x + 1;
-                else
-                    tx = (int)x;
-                
-                if(y - (int)y >= 0.5f)
-                    ty = (int)y + 1;
-                else
-                    ty = (int)y;
-                
-                temp[tx][ty] = masterMesh[i][j];
+                if(masterMesh[i][j].x != -1){
+                    if(masterMesh[i][j].y < 0)
+                        xCorrector = true;
+                    if(masterMesh[i][j].z < 0)
+                        yCorrector = true;
+                    
+                    x = masterMesh[i][j].y;
+                    if(xCorrector)
+                        x += xd;//add abs displacement value to it dont go out of bound
+                    y = masterMesh[i][j].z;
+                    if(yCorrector)
+                        y += yd;
+                    
+                    if(x - (int)x >= 0.5f)
+                        tx = (int)x + 1;
+                    else
+                        tx = (int)x;
+                    
+                    if(y - (int)y >= 0.5f)
+                        ty = (int)y + 1;
+                    else
+                        ty = (int)y;
+                    
+                    temp[tx][ty] = masterMesh[i][j];
+                }
             }
         }
+        
+        //FOLLOWING DOES NOT WORK
+        //can't just extend the edges by copying the original
+        //there will be points w/o any original to copy from
+        //left
+        //                for(int i = 1; i < temp.length; i++){
+        //                    if(temp[i][0].x == -1){
+        //                        temp[i][0].x = temp[i][1].x;
+        //                    }
+        //                }
+        //                //right
+        //                for(int i = 1; i < temp.length; i++){
+        //                    if(temp[i][temp[0].length - 1].x == -1){
+        //                        temp[i][temp[0].length - 1].x = temp[i][temp[0].length - 2].x;
+        //                    }
+        //                }
+        //                //bottom
+        //                for(int j = 1; j < temp[0].length; j++){
+        //                    if(temp[0][j].x == -1){
+        //                        temp[0][j].x = temp[1][j].x;
+        //                    }
+        //                }
+        //                //top
+        //                for(int j = 1; j < temp[0].length; j++){
+        //                    if(temp[temp.length - 1][j].x == -1){
+        //                        temp[temp.length - 1][j].x = temp[temp.length - 2][j].x;
+        //                    }
+        //                }
+        
+        //now lets fix the borders by checking for -1
+        //        for(int i = 1; i < temp.length - 1; i++){
+        //            for(int j = 1; j < temp[0].length - 1; j++){
+        //                if(temp[i][j].x == -1){
+        //                    temp[i][j].x = 100;
+        //                }
+        //            }
+        //        }
+        
+        
         masterMesh = temp;
         
         //instantiate elements of array
         for(int index = 0; index < meshes.length; index++){
             meshes[index] = new SubMesh(masterMesh.length, masterMesh[0].length, meshes[index].getMovement(), meshes[index].getDisplacement());
         }
-        System.out.println(meshes[0].mesh.length + " s w" + meshes[0].mesh[0].length);
+        //        System.out.println(meshes[0].mesh.length + " s w" + meshes[0].mesh[0].length);
         
-        //Now load the SubMeshes using top-down method
-        //only consider a single faultline
-        //        boolean upOrBelow = true;
-        //        for(int index = 0; index < meshes.length; index++){
-        //            loadSubMeshes(meshes[index], upOrBelow, 0);
-        //            upOrBelow = !upOrBelow;
-        //        }
+        
         loadSubMeshesV2();
     }
     
+    public float totalMass(){
+        float sum = 0.0f;
+        
+        for(int i = 0; i < masterMesh.length; i++){
+            for(int j = 0; j < masterMesh[0].length; j++){
+                if(masterMesh[i][j].x != -1){
+                    sum += masterMesh[i][j].x;
+                }
+            }
+        }
+        
+        return sum;
+    }
     
-    
-    
+    public void changeVar(){
+        
+    }
     
     
     //SCRAPED

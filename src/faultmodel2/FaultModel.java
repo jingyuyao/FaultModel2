@@ -6,12 +6,14 @@ package faultmodel2;
 
 import de.matthiasmann.twl.utils.PNGDecoder;
 import java.awt.Font;
+import java.awt.Graphics2D;
 import java.awt.HeadlessException;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import javax.imageio.ImageIO;
 import org.lwjgl.BufferUtils;
@@ -26,12 +28,16 @@ import org.lwjgl.input.Mouse;
 import org.lwjgl.util.vector.Vector3f;
 import java.util.Timer;
 import java.util.TimerTask;
+import javax.swing.JFrame;
 import javax.swing.JOptionPane;
+import org.lwjgl.util.vector.Matrix4f;
 
 
 /**
  *
  * @author your name
+ *
+ * A shout out to TheCodingUniverse for the awesome OpenGL tutorials.
  */
 public class FaultModel{
     private Mesh mesh;
@@ -41,9 +47,12 @@ public class FaultModel{
     private final int DISPLAY_HEIGHT = 600;
     
     private final int[] WINDOW_DIMENSIONS = {1200, 650};
+    private final float[] DEFAULT_CAMERA_POS = {3f, 8.5f,2f};
+    private final float[] DEFAULT_CAMERA_ROT = {27.84f, 135.64f};
+    
     private final float ASPECT_RATIO = (float) WINDOW_DIMENSIONS[0] / (float) WINDOW_DIMENSIONS[1];
-    private final EulerCamera camera = new EulerCamera.Builder().setPosition(-5.4f, 19.2f,
-            33.2f).setRotation(30, 61, 0).setAspectRatio(ASPECT_RATIO).setFieldOfView(60).build();
+    private final EulerCamera camera = new EulerCamera.Builder().setPosition(DEFAULT_CAMERA_POS[0], DEFAULT_CAMERA_POS[1],
+            DEFAULT_CAMERA_POS[2]).setRotation(DEFAULT_CAMERA_ROT[0], DEFAULT_CAMERA_ROT[1], 0).setAspectRatio(ASPECT_RATIO).setFieldOfView(60).build();
     
     private boolean rain = false;
     private boolean move = false;
@@ -56,19 +65,27 @@ public class FaultModel{
     
     private int programID;
     
-    private ArrayList[] rainTrace = new ArrayList[10];
-    private int rainTraceNum = 0;
+    private final static int rainPerClick = 1000;
+    
+    public static ArrayList[] rainTrace = new ArrayList[rainPerClick];
+    public static int rainTraceNum = 0;
     
     private String helpMessage = "Controls: \n WASD: movement \n shift: go up \n ctrl: go down"
             + "\n mouse: left click: drag \n\tright click: un-drag"
             + "\n P: Change view state \n R: rain \n M: fault movement"
-            + "\n N: manual sync \n C: erode count "
+            + "\n N: manual sync \n I: update info"
             + "\n H: help";
+    
+    private static JFrame frame;
+    private static Graphics2D g;
     
     /**
      * @param args the command line arguments
      */
     public static void main(String[] args) {
+        frame = new JFrame("Info Window");
+        frame.setSize(300, 500);
+        frame.setVisible(true);
         FaultModel mod = new FaultModel();
     }
     
@@ -122,7 +139,16 @@ public class FaultModel{
         // Set the background to a blue sky colour
         glClearColor(0, 0.75f, 1, 1);
         // Remove the back (bottom) faces of shapes for performance
-        glEnable(GL_CULL_FACE);
+//                glEnable(GL_CULL_FACE);
+//                glCullFace(GL_BACK);
+        //for lighting
+//                glEnable(GL_COLOR_MATERIAL);
+//                glColorMaterial(GL_FRONT, GL_DIFFUSE);
+//                glShadeModel(GL_SMOOTH);
+//                glEnable(GL_LIGHTING);
+//                glEnable(GL_LIGHT0);
+//                glLightModel(GL_LIGHT_MODEL_AMBIENT, asFlippedFloatBuffer(new float[]{0.05f, 0.05f, 0.05f, 1f}));
+//                glLight(GL_LIGHT0, GL_POSITION, asFlippedFloatBuffer(new float[]{0.5f, 0.5f, 0.5f, 1}));
     }
     
     private void setUpMatrices() {
@@ -133,7 +159,7 @@ public class FaultModel{
         try{
             //get the height map
             //String file = JOptionPane.showInputDialog("File path of heightmap(ex: MyDocuments/images/stuff.jpg):");
-            String heightMapFile = "src/faultmodel2/test.jpg";//current: Terrain2.bmp, test.jpg
+            String heightMapFile = "src/faultmodel2/gradient3.jpg";//current: Terrain2.bmp, test.jpg
             heightMap = ImageIO.read(new File(heightMapFile));
             //        String faultMapFile = "src/faultmodel2/heightmap2f.jpg";
             //        faultMap = ImageIO.read(new File(faultMapFile));
@@ -161,6 +187,7 @@ public class FaultModel{
         glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
         
         glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
         
         shader = new Shader("src/faultmodel2/shader.vert", "src/faultmodel2/shader.frag");
         programID = shader.getProgram();
@@ -189,6 +216,10 @@ public class FaultModel{
                 }
                 if (Keyboard.getEventKey() == Keyboard.KEY_R){
                     rain = !rain;
+                    //                    for(int i = 0; i < rainPerClick; i++){
+                    //                        mesh.rain();
+                    //                    }
+                    //                    draw();
                 }
                 if (Keyboard.getEventKey() == Keyboard.KEY_M){
                     move = !move;
@@ -196,14 +227,44 @@ public class FaultModel{
                 if (Keyboard.getEventKey() == Keyboard.KEY_N){
                     mesh.sync();
                 }
-                if (Keyboard.getEventKey() == Keyboard.KEY_C){
-                    JOptionPane.showMessageDialog(null, "Erode Count: " + mesh.erodeCounter);
-                }
                 if (Keyboard.getEventKey() == Keyboard.KEY_H){
                     JOptionPane.showMessageDialog(null, helpMessage);
                 }
-                
+                if (Keyboard.getEventKey() == Keyboard.KEY_O){
+                    System.out.println(camera.toString());
+                }
+                if (Keyboard.getEventKey() == Keyboard.KEY_K){
+                    camera.setPosition(DEFAULT_CAMERA_POS[0], DEFAULT_CAMERA_POS[1],DEFAULT_CAMERA_POS[2]);
+                    camera.setRotation(DEFAULT_CAMERA_ROT[0], DEFAULT_CAMERA_ROT[1], 0);
+                }
+                if (Keyboard.getEventKey() == Keyboard.KEY_T){
+                    for(int i = 0; i < 1000000; i++){
+                        mesh.rain();
+                    }
+                    draw();
+                }
+                //                if (Keyboard.getEventKey() == Keyboard.KEY_G){
+                //                    glLight(GL_LIGHT0, GL_POSITION, asFlippedFloatBuffer(new float[]{camera.x(), camera.y(), camera.z(), 1}));
+                //                }
+                //                if (Keyboard.getEventKey() == Keyboard.KEY_U){
+                //                    cleanUp();
+                //                }
+                if (Keyboard.getEventKey() == Keyboard.KEY_I){
+                    g = (Graphics2D)frame.getGraphics();
+                    g.clearRect(0, 0, 300, 500);
+                    g.drawString("Erode Count: " + mesh.erodeCounter + " Diffuse Count: " + mesh.diffuseCounter, 20, 50);
+                    g.drawString("Change in mass: " + (mesh.totalMass() - mesh.iniMass), 20, 70);
+                    g.drawString("InfLoop: " + mesh.infLoop + " normRain: " + mesh.normRain, 20, 90);
+                    g.drawString("normErode: " + mesh.normErode, 20, 110);
+                    g.drawString("cover: " + mesh.cover, 20, 130);
+                    g.drawString("fill hole & keep going: " + mesh.fill, 20, 150);
+                    g.drawString("Average mass shift: " + (mesh.totalMassShift / (mesh.normErode + mesh.cover + mesh.fill)), 20, 170);
+                    g.drawString("MassTaken: " + mesh.massTaken + " MassDrop: " + mesh.massDrop, 20, 190);
+                    g.drawString("OutBound: " + mesh.outBoundCounter, 20, 210);
+                    g.drawString("NumException: " + mesh.numException, 20, 230);
+                }
             }
+            
         }
         if (Mouse.isButtonDown(0)) {
             Mouse.setGrabbed(true);
@@ -213,25 +274,27 @@ public class FaultModel{
         if (Mouse.isGrabbed()) {
             camera.processMouse(1, 80, -80);
         }
-        camera.processKeyboard(16, 1);
+        camera.processKeyboard(16, 3);
     }
     
     private void loop(){
-        Timer time = new Timer();
-        //use timer to run tasks so it does not interfere with render
-        time.schedule(new TimerTask() {
-            
-            @Override
-            public void run() {
-            }
-        }, 300);
+        //        Timer time = new Timer();
+        //        //use timer to run tasks so it does not interfere with render
+        //        time.schedule(new TimerTask() {
+        //
+        //            @Override
+        //            public void run() {
+        //
+        //            }
+        //        }, 300);
         
         while(!Display.isCloseRequested()){
             
             if(rain){
-                mesh.rain();
+                for(int i = 0; i < rainPerClick; i++){
+                    mesh.rain();
+                }
                 draw();
-                
             }
             if(move){
                 
@@ -243,24 +306,30 @@ public class FaultModel{
                 }
                 draw();
             }
-            
             render();
+            
             input();
             Display.update();
             Display.sync(60);
         }
         
+        cleanUp();
+    }
+    
+    private void cleanUp(){
         //close display at end of program
         glUseProgram(0);
         glDeleteProgram(shader.getProgram());
+        glDeleteLists(heightmapDisplayList, 1);
         glBindTexture(GL_TEXTURE_2D, 0);
         Display.destroy();
         System.exit(0);
-        
     }
     
     //Renders the model
     public void render(){
+        //update the list
+        //        draw();
         // Clear the pixels on the screen and clear the contents of the depth buffer (3D contents of the scene)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         // Reset any translations the camera made last frame update
@@ -270,14 +339,14 @@ public class FaultModel{
         // Render the heightmap using the shaders that are being used
         glCallList(heightmapDisplayList);
         
-        if(mesh.rainStrip != null && !mesh.rainStrip.isEmpty()){
-            rainTrace[rainTraceNum] = mesh.rainStrip;
-            if(rainTraceNum == 9){
-                rainTraceNum = 0;
-            }else{
-                rainTraceNum++;
-            }
-        }
+        //        if(mesh.rainStrip != null && !mesh.rainStrip.isEmpty()){
+        //            rainTrace[rainTraceNum] = mesh.rainStrip;
+        //            if(rainTraceNum == rainTrace.length - 1){
+        //                rainTraceNum = 0;
+        //            }else{
+        //                rainTraceNum++;
+        //            }
+        //        }
         
         glUseProgram(0);
         Vector3f v;
@@ -296,7 +365,7 @@ public class FaultModel{
         }
         //        glPointSize(2);
         glUseProgram(programID);
-        mesh.rainStrip = new ArrayList<>();
+        //        mesh.rainStrip = new ArrayList<>();
     }
     
     //Create a DisplayList from the masterMesh to render
@@ -310,6 +379,7 @@ public class FaultModel{
         glScalef(0.2f, 0.05f, 0.2f);
         // Iterate over the 'strips' of heightmap data.
         Vector3f p;
+        //        glColor3f(0.4f, 0.27f, 0.17f);
         for (int z = 0; z < mesh.masterMesh.length - 1; z++) {
             // Render a triangle strip for each 'strip'.
             glBegin(GL_TRIANGLE_STRIP);
@@ -325,6 +395,7 @@ public class FaultModel{
             glEnd();
         }
         
+        
         glEndList();
     }
     
@@ -338,4 +409,14 @@ public class FaultModel{
     }
     
     
+    /**
+     * @param values the float values that are to be turned into a FloatBuffer
+     * @return a FloatBuffer readable to OpenGL (not to you!) containing values
+     */
+    private static FloatBuffer asFlippedFloatBuffer(float... values) {
+        FloatBuffer buffer = BufferUtils.createFloatBuffer(values.length);
+        buffer.put(values);
+        buffer.flip();
+        return buffer;
+    }
 }
