@@ -1,6 +1,8 @@
 /*
  * To change this template, choose Tools | Templates
  * and open the template in the editor.
+ * 
+ * Shout out goes to Oskar Veerhoek for the OpenGL tutorial
  */
 package faultmodel2;
 
@@ -49,10 +51,11 @@ public class FaultModel{
     private final int[] WINDOW_DIMENSIONS = {1200, 650};
     private final float[] DEFAULT_CAMERA_POS = {3f, 8.5f,2f};
     private final float[] DEFAULT_CAMERA_ROT = {27.84f, 135.64f};
+    private static float[] lightPosition = {200f, -10f, 0f, 1f};
     
     private final float ASPECT_RATIO = (float) WINDOW_DIMENSIONS[0] / (float) WINDOW_DIMENSIONS[1];
     private final EulerCamera camera = new EulerCamera.Builder().setPosition(DEFAULT_CAMERA_POS[0], DEFAULT_CAMERA_POS[1],
-            DEFAULT_CAMERA_POS[2]).setRotation(DEFAULT_CAMERA_ROT[0], DEFAULT_CAMERA_ROT[1], 0).setAspectRatio(ASPECT_RATIO).setFieldOfView(60).build();
+            DEFAULT_CAMERA_POS[2]).setRotation(DEFAULT_CAMERA_ROT[0], DEFAULT_CAMERA_ROT[1], 0).setAspectRatio(ASPECT_RATIO).setFieldOfView(60).setFarClippingPane(200).build();
     
     private boolean rain = false;
     private boolean move = false;
@@ -107,7 +110,8 @@ public class FaultModel{
         //mesh have to be created before shader
         //since shader use max height of the mesh
         mesh = new Mesh(heightMap,faultMap,1);
-        setUpShader();
+//                setUpShader();
+        setUpLight();
         glDeleteLists(heightmapDisplayList, 1);
         
         heightmapDisplayList = glGenLists(1);
@@ -139,16 +143,20 @@ public class FaultModel{
         // Set the background to a blue sky colour
         glClearColor(0, 0.75f, 1, 1);
         // Remove the back (bottom) faces of shapes for performance
-//                glEnable(GL_CULL_FACE);
-//                glCullFace(GL_BACK);
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+    }
+    
+    private void setUpLight(){
         //for lighting
-//                glEnable(GL_COLOR_MATERIAL);
-//                glColorMaterial(GL_FRONT, GL_DIFFUSE);
-//                glShadeModel(GL_SMOOTH);
-//                glEnable(GL_LIGHTING);
-//                glEnable(GL_LIGHT0);
-//                glLightModel(GL_LIGHT_MODEL_AMBIENT, asFlippedFloatBuffer(new float[]{0.05f, 0.05f, 0.05f, 1f}));
-//                glLight(GL_LIGHT0, GL_POSITION, asFlippedFloatBuffer(new float[]{0.5f, 0.5f, 0.5f, 1}));
+        glShadeModel(GL_SMOOTH);
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_LIGHTING);
+        glEnable(GL_LIGHT0);
+        glLightModel(GL_LIGHT_MODEL_AMBIENT, asFlippedFloatBuffer(new float[]{0f, 0f, 0f, 1f}));
+        glLight(GL_LIGHT0, GL_DIFFUSE, asFlippedFloatBuffer(new float[]{0.5f, 0.5f, 0.5f, 1}));
+        glEnable(GL_COLOR_MATERIAL);
+        glColorMaterial(GL_FRONT, GL_DIFFUSE);
     }
     
     private void setUpMatrices() {
@@ -159,7 +167,8 @@ public class FaultModel{
         try{
             //get the height map
             //String file = JOptionPane.showInputDialog("File path of heightmap(ex: MyDocuments/images/stuff.jpg):");
-            String heightMapFile = "src/faultmodel2/gradient3.jpg";//current: Terrain2.bmp, test.jpg
+//            String heightMapFile = "src/faultmodel2/dem10x10.png";//current: Terrain2.bmp, test.jpg
+            String heightMapFile = "src/faultmodel2/gradient3.jpg";
             heightMap = ImageIO.read(new File(heightMapFile));
             //        String faultMapFile = "src/faultmodel2/heightmap2f.jpg";
             //        faultMap = ImageIO.read(new File(faultMapFile));
@@ -216,10 +225,6 @@ public class FaultModel{
                 }
                 if (Keyboard.getEventKey() == Keyboard.KEY_R){
                     rain = !rain;
-                    //                    for(int i = 0; i < rainPerClick; i++){
-                    //                        mesh.rain();
-                    //                    }
-                    //                    draw();
                 }
                 if (Keyboard.getEventKey() == Keyboard.KEY_M){
                     move = !move;
@@ -243,9 +248,19 @@ public class FaultModel{
                     }
                     draw();
                 }
-                //                if (Keyboard.getEventKey() == Keyboard.KEY_G){
-                //                    glLight(GL_LIGHT0, GL_POSITION, asFlippedFloatBuffer(new float[]{camera.x(), camera.y(), camera.z(), 1}));
-                //                }
+                if (Keyboard.getEventKey() == Keyboard.KEY_Y){
+                    for(int i = 0; i < 1000; i++){
+                        mesh.rainT();
+                    }
+                    draw();
+                }
+//                if (Keyboard.getEventKey() == Keyboard.KEY_G){
+////                    lightPosition = new float[]{camera.x(), camera.y(), camera.z(), 1};
+//                }
+//                if (Keyboard.getEventKey() == Keyboard.KEY_F){
+//                    mesh.diffuse3();
+//                    draw();
+//                }
                 //                if (Keyboard.getEventKey() == Keyboard.KEY_U){
                 //                    cleanUp();
                 //                }
@@ -275,6 +290,7 @@ public class FaultModel{
             camera.processMouse(1, 80, -80);
         }
         camera.processKeyboard(16, 3);
+        glLight(GL_LIGHT0, GL_POSITION, asFlippedFloatBuffer(lightPosition));
     }
     
     private void loop(){
@@ -318,8 +334,8 @@ public class FaultModel{
     
     private void cleanUp(){
         //close display at end of program
-        glUseProgram(0);
-        glDeleteProgram(shader.getProgram());
+//                glUseProgram(0);
+//                glDeleteProgram(shader.getProgram());
         glDeleteLists(heightmapDisplayList, 1);
         glBindTexture(GL_TEXTURE_2D, 0);
         Display.destroy();
@@ -339,16 +355,8 @@ public class FaultModel{
         // Render the heightmap using the shaders that are being used
         glCallList(heightmapDisplayList);
         
-        //        if(mesh.rainStrip != null && !mesh.rainStrip.isEmpty()){
-        //            rainTrace[rainTraceNum] = mesh.rainStrip;
-        //            if(rainTraceNum == rainTrace.length - 1){
-        //                rainTraceNum = 0;
-        //            }else{
-        //                rainTraceNum++;
-        //            }
-        //        }
         
-        glUseProgram(0);
+//                glUseProgram(0);
         Vector3f v;
         //        glPointSize(4);
         for(int n = 0; n < rainTrace.length; n++){
@@ -358,14 +366,44 @@ public class FaultModel{
                 for(int i = 0; i < rainTrace[n].size(); i++){
                     v = (Vector3f) rainTrace[n].get(i);
                     
-                    glVertex3f(v.z, v.x, v.y);
+                    glVertex3f(v.z, v.x + 0.01f, v.y);
                 }
                 glEnd();
             }
         }
-        //        glPointSize(2);
-        glUseProgram(programID);
+        
+//                glPointSize(2);
+//                glUseProgram(programID);
         //        mesh.rainStrip = new ArrayList<>();
+    }
+    
+    //outdated draw method
+    private void drawT(){
+        glDeleteLists(heightmapDisplayList, 1);
+        
+        heightmapDisplayList = glGenLists(1);
+        
+        glNewList(heightmapDisplayList, GL_COMPILE);
+        // Scale back the display list so that its proportions are acceptable.
+        glScalef(0.2f, 0.05f, 0.2f);
+        glNormal3f(0,-1,0);
+        // Iterate over the 'strips' of heightmap data.
+        Vector3f p;
+                glColor3f(0.4f, 0.27f, 0.17f);
+        for (int z = 0; z < mesh.masterMesh.length - 1; z++) {
+            // Render a triangle strip for each 'strip'.
+            glBegin(GL_TRIANGLE_STRIP);
+            for (int x = 0; x < mesh.masterMesh[z].length; x++) {
+                p = mesh.masterMesh[z][x];
+                // Take a vertex from the current strip
+                vx(p);
+                p = mesh.masterMesh[z+1][x];
+                // Take a vertex from the next strip
+                vx(p);
+            }
+            glEnd();
+        }
+        glEndList();
     }
     
     //Create a DisplayList from the masterMesh to render
@@ -377,20 +415,44 @@ public class FaultModel{
         glNewList(heightmapDisplayList, GL_COMPILE);
         // Scale back the display list so that its proportions are acceptable.
         glScalef(0.2f, 0.05f, 0.2f);
+        glNormal3f(0,-1,0);
         // Iterate over the 'strips' of heightmap data.
-        Vector3f p;
-        //        glColor3f(0.4f, 0.27f, 0.17f);
+        Vector3f p1,p2,p3,p4;
+                glColor3f(0.4f, 0.27f, 0.17f);
         for (int z = 0; z < mesh.masterMesh.length - 1; z++) {
             // Render a triangle strip for each 'strip'.
-            glBegin(GL_TRIANGLE_STRIP);
-            for (int x = 0; x < mesh.masterMesh[z].length; x++) {
-                p = mesh.masterMesh[z][x];
-                // Take a vertex from the current strip
-                glVertex3f(p.z,p.x,p.y);
-                
-                p = mesh.masterMesh[z+1][x];
-                // Take a vertex from the next strip
-                glVertex3f(p.z,p.x,p.y);
+            glBegin(GL_TRIANGLES);
+            for (int x = 0; x < mesh.masterMesh[z].length - 1; x++) {
+                if(mesh.masterMesh[z][x].x != -1.0f){
+                    p1 = mesh.masterMesh[z][x];
+                    p2 = mesh.masterMesh[z+1][x];
+                    p3 = mesh.masterMesh[z+1][x+1];
+                    p4 = mesh.masterMesh[z][x+1];
+                    
+                    if(p2.x < p3.x && p2.x != -1.0f){
+                        if(p2.x != -1.0f && p4.x != -1.0f){
+                            vx(p1);
+                            vx(p2);
+                            vx(p4);
+                        }
+                        if(p2.x != -1.0f && p3.x != -1.0f && p4.x != -1.0f){
+                            vx(p2);
+                            vx(p3);
+                            vx(p4);
+                        }
+                    }else if(p3.x != -1.0f){
+                        if(p2.x != -1.0f && p3.x != -1.0f){
+                            vx(p1);
+                            vx(p2);
+                            vx(p3);
+                        }
+                        if(p3.x != -1.0f && p4.x != -1.0f){
+                            vx(p1);
+                            vx(p3);
+                            vx(p4);
+                        }
+                    }
+                }
             }
             glEnd();
         }
@@ -399,6 +461,10 @@ public class FaultModel{
         glEndList();
     }
     
+    
+    private void vx(Vector3f p){
+        glVertex3f(p.z,p.x,p.y);
+    }
     //not used atm
     //This controls how much erode and move is called
     public void updateData(int erodeTime, int moveTime){
