@@ -12,7 +12,7 @@ import org.lwjgl.util.vector.Vector3f;
  *
  * @author Jingyu Yao
  */
-public class SubMesh {
+public class SubMesh{
     public Vector3f[][] mesh;//public for easier access/modify
     private Vector3f movement;
     private Vector3f displacement = new Vector3f();

@@ -65,6 +65,7 @@ public class FaultModel{
     private int texture;
     
     private int moveSyncCounter = 0;
+    private int syncAfterMove;
     
     private int programID;
     
@@ -82,6 +83,10 @@ public class FaultModel{
     private static JFrame frame;
     private static Graphics2D g;
     
+    private String fileLoc = "src/faultmodel2/gradient3.jpg";
+    //dem10x10.png dem20x20.png dem38x38.png
+    //gaussian.jpg gradient3.png test.jpg
+    
     /**
      * @param args the command line arguments
      */
@@ -95,8 +100,11 @@ public class FaultModel{
     public FaultModel(){
         setUp();
         //somehow the precision can only be .1
-        mesh.meshes[0].setMovement(new Vector3f(0f,0.01f,0.01f));
-        //        mesh.meshes[1].setMovement(new Vector3f(0f,0.05f,0.05f));
+//        mesh.setMovement(0, new Vector3f(0f,0.01f,0.01f));//sideways
+        mesh.setMovement(0, new Vector3f(0f,-0.05f,0.05f));//go out
+//        mesh.setMovement(0, new Vector3f(0f,0f,0.05f));////go up
+//                mesh.setMovement(0, new Vector3f(0f,-0.05f,0.00f));//go right
+//        System.out.println("factor" + 1/mesh.moveFactor.y);
         System.out.println(helpMessage);
         loop();
     }
@@ -168,7 +176,7 @@ public class FaultModel{
             //get the height map
             //String file = JOptionPane.showInputDialog("File path of heightmap(ex: MyDocuments/images/stuff.jpg):");
 //            String heightMapFile = "src/faultmodel2/dem10x10.png";//current: Terrain2.bmp, test.jpg
-            String heightMapFile = "src/faultmodel2/gradient3.jpg";
+            String heightMapFile = fileLoc;
             heightMap = ImageIO.read(new File(heightMapFile));
             //        String faultMapFile = "src/faultmodel2/heightmap2f.jpg";
             //        faultMap = ImageIO.read(new File(faultMapFile));
@@ -265,18 +273,7 @@ public class FaultModel{
                 //                    cleanUp();
                 //                }
                 if (Keyboard.getEventKey() == Keyboard.KEY_I){
-                    g = (Graphics2D)frame.getGraphics();
-                    g.clearRect(0, 0, 300, 500);
-                    g.drawString("Erode Count: " + mesh.erodeCounter + " Diffuse Count: " + mesh.diffuseCounter, 20, 50);
-                    g.drawString("Change in mass: " + (mesh.totalMass() - mesh.iniMass), 20, 70);
-                    g.drawString("InfLoop: " + mesh.infLoop + " normRain: " + mesh.normRain, 20, 90);
-                    g.drawString("normErode: " + mesh.normErode, 20, 110);
-                    g.drawString("cover: " + mesh.cover, 20, 130);
-                    g.drawString("fill hole & keep going: " + mesh.fill, 20, 150);
-                    g.drawString("Average mass shift: " + (mesh.totalMassShift / (mesh.normErode + mesh.cover + mesh.fill)), 20, 170);
-                    g.drawString("MassTaken: " + mesh.massTaken + " MassDrop: " + mesh.massDrop, 20, 190);
-                    g.drawString("OutBound: " + mesh.outBoundCounter, 20, 210);
-                    g.drawString("NumException: " + mesh.numException, 20, 230);
+                    updateInfo();
                 }
             }
             
@@ -316,7 +313,12 @@ public class FaultModel{
                 
                 mesh.move();
                 moveSyncCounter++;
-                if(moveSyncCounter == 80){//try to keep this as high as possible
+                if(Math.abs(mesh.moveFactor.y) > Math.abs(mesh.moveFactor.z)){
+                    syncAfterMove = (int)(1/Math.abs(mesh.moveFactor.y));
+                }else{
+                    syncAfterMove = (int)(1/Math.abs(mesh.moveFactor.z));
+                }
+                if(moveSyncCounter == syncAfterMove){//try to keep this as high as possible
                     mesh.sync();          //it "eats" the mesh if its too low
                     moveSyncCounter = 0;
                 }
@@ -456,15 +458,33 @@ public class FaultModel{
             }
             glEnd();
         }
-        
-        
         glEndList();
+        
+//        updateInfo();
     }
     
-    
+    //draw a single point
+    //NOTE: mesh(x,y,z) --> openGL(z,x,y)
     private void vx(Vector3f p){
         glVertex3f(p.z,p.x,p.y);
     }
+    
+    //updates the information window
+    private void updateInfo(){
+        g = (Graphics2D)frame.getGraphics();
+        g.clearRect(0, 0, 300, 500);
+        g.drawString("Erode Count: " + mesh.erodeCounter + " Diffuse Count: " + mesh.diffuseCounter, 20, 50);
+        g.drawString("Change in mass: " + (mesh.totalMass() - mesh.iniMass), 20, 70);
+        g.drawString("InfLoop: " + mesh.infLoop + " normRain: " + mesh.normRain, 20, 90);
+        g.drawString("normErode: " + mesh.normErode, 20, 110);
+        g.drawString("cover: " + mesh.cover, 20, 130);
+        g.drawString("fill hole & keep going: " + mesh.fill, 20, 150);
+        g.drawString("Average mass shift: " + (mesh.totalMassShift / (mesh.normErode + mesh.cover + mesh.fill)), 20, 170);
+        g.drawString("MassTaken: " + mesh.massTaken + " MassDrop: " + mesh.massDrop, 20, 190);
+        g.drawString("OutBound: " + mesh.outBoundCounter, 20, 210);
+        g.drawString("NumException: " + mesh.numException, 20, 230);
+    }
+    
     //not used atm
     //This controls how much erode and move is called
     public void updateData(int erodeTime, int moveTime){
@@ -473,7 +493,6 @@ public class FaultModel{
         draw();
         
     }
-    
     
     /**
      * @param values the float values that are to be turned into a FloatBuffer

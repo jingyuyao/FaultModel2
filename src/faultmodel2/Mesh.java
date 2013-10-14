@@ -22,7 +22,7 @@ import java.util.Random;
  * @author Jingyu Yao
  */
 public class Mesh {
-    public SubMesh[] meshes;
+    private SubMesh[] meshes;//[0]up, [1]down
     private Point[] borders;
     public Vector3f[][] masterMesh;//x is height, (y,z) is location
     private Vector3f[][] masterMeshCopy;
@@ -31,6 +31,10 @@ public class Mesh {
     private Vector2f faultVector;
     float iniMass;
     public ArrayList<Vector3f> rainStrip;
+    public Vector3f moveFactor = new Vector3f(0f,0f,0f);//combines all the movement vector of the submeshes into one
+                        //used to see after how long should sync be called to improve efficiency
+      
+    boolean up = false;//default moving submesh = down
     
     //"null" point is defined with x = -1.0f, all algorithms ignores "null" points
     
@@ -61,16 +65,20 @@ public class Mesh {
     private float wk_b = wk_c * wk_fmin;
     private float walker = 0;
     
-    //diffusion equation
+    
+    private float diffuseConstant = 0.1f;//for avgDiffuse
+    
+    
+    //diffusion equation NOT USED***************************
     private float timeStep = 1f;
     private float gridSize = 1f;
     private float D = 10f;
     private float diffuseAmount = (float)(Math.pow(Math.E, (-(gridSize*gridSize))/(4*D*timeStep)) / (4*Math.PI*D*timeStep));
     private float maxDiffuse = 3 * wk_fmax;//for diffuse4, not used
-    private float diffuseConstant = 0.1f;//for diffuse 4
+    
     
     public Mesh(BufferedImage heightMap, BufferedImage faultMap, int faults){
-        System.out.println(diffuseAmount);
+//        System.out.println(diffuseAmount);
         faultLines = new FaultLine[faults];
         meshes = new SubMesh[faults + 1];//initialize array
         
@@ -321,7 +329,6 @@ public class Mesh {
     }
     
     //find the greatest value in the array
-    //choose a random value if diffuse is true
     //maintain posX and posY values
     private float getGreatV(float[] deltaH){
         //find largest deltaH
@@ -396,6 +403,7 @@ public class Mesh {
         //        System.out.println(walker);
     }
     
+    //rain method for testing
     public void rainT(){
         int i = ran.nextInt(masterMesh.length);
         int j = ran.nextInt(masterMesh[1].length);
@@ -462,7 +470,6 @@ public class Mesh {
         }
     }
     
-    
     //Move the submeshes
     public void move(){
         for(int index = 0; index < meshes.length; index++){
@@ -471,9 +478,6 @@ public class Mesh {
         update();
     }
     
-    private float calcDiffuse(float t, float g, float d){
-        return (float)(Math.pow(Math.E, (-(g*g))/(4*d*t)) / (4*Math.PI*d*t));
-    }
     
     //update the value of each point but does not "reconnect" them
     private void update(){
@@ -515,6 +519,12 @@ public class Mesh {
         for(int i = 0; i < meshes.length; i++){
             Vector3f.add(totalDisplacement, meshes[i].getDisplacement(), totalDisplacement);
         }
+        
+//        if(totalDisplacement.y < 1 && totalDisplacement.y > -1 && totalDisplacement.z < 1 && totalDisplacement.z > -1){
+//            System.out.println("never happened");
+//            return;
+//        }
+            
         //        System.out.println(totalDisplacement);
         //        System.out.println(meshes[0].getDisplacement());
         //if the displacement is 3.5+ it is 4
@@ -586,46 +596,26 @@ public class Mesh {
                 }
             }
         }
-        
-        //FOLLOWING DOES NOT WORK
-        //can't just extend the edges by copying the original
-        //there will be points w/o any original to copy from
-        //left
-        //                for(int i = 1; i < temp.length; i++){
-        //                    if(temp[i][0].x == -1){
-        //                        temp[i][0].x = temp[i][1].x;
-        //                    }
-        //                }
-        //                //right
-        //                for(int i = 1; i < temp.length; i++){
-        //                    if(temp[i][temp[0].length - 1].x == -1){
-        //                        temp[i][temp[0].length - 1].x = temp[i][temp[0].length - 2].x;
-        //                    }
-        //                }
-        //                //bottom
-        //                for(int j = 1; j < temp[0].length; j++){
-        //                    if(temp[0][j].x == -1){
-        //                        temp[0][j].x = temp[1][j].x;
-        //                    }
-        //                }
-        //                //top
-        //                for(int j = 1; j < temp[0].length; j++){
-        //                    if(temp[temp.length - 1][j].x == -1){
-        //                        temp[temp.length - 1][j].x = temp[temp.length - 2][j].x;
-        //                    }
-        //                }
-        
-        //now lets fix the borders by checking for -1
-        //        for(int i = 1; i < temp.length - 1; i++){
-        //            for(int j = 1; j < temp[0].length - 1; j++){
-        //                if(temp[i][j].x == -1){
-        //                    temp[i][j].x = 100;
-        //                }
-        //            }
-        //        }
-        
-        
+        //replace the masterMesh with the new one
         masterMesh = temp;
+        
+        //now we need to fix the gap
+        //according to fault don work so good, according to -1.0f maybe?
+//        int yPoint;
+//        if(up){
+//            for(int xPoint = 0; xPoint < masterMesh.length; xPoint++){
+//                yPoint = (int)(faultVector.y * xPoint) + 1;
+//                try{
+//                    if(masterMesh[xPoint][yPoint].x == -1.0f){
+//                        //                    masterMesh[xPoint][yPoint].x = masterMesh[xPoint][yPoint-1].x + (1/meshes[0].getMovement().));
+//                        masterMesh[xPoint][yPoint].x = 100f;
+//                    }
+//                }catch(Exception e){
+//                    e.printStackTrace();
+//                }
+//            }
+//        }
+        
         
         //instantiate elements of array
         for(int index = 0; index < meshes.length; index++){
@@ -637,6 +627,7 @@ public class Mesh {
         loadSubMeshesV2();
     }
     
+    //get the total mass of the mesh, ignore -1.0f
     public float totalMass(){
         float sum = 0.0f;
         
@@ -647,17 +638,34 @@ public class Mesh {
                 }
             }
         }
-        System.out.println(masterMesh[0][0].x + " " + masterMesh[masterMesh.length-1][0].x
-                + " " + masterMesh[0][masterMesh[0].length-1].x+ " " + masterMesh[masterMesh.length-1][masterMesh[0].length-1].x);
+//        System.out.println(masterMesh[0][0].x + " " + masterMesh[masterMesh.length-1][0].x
+//                + " " + masterMesh[0][masterMesh[0].length-1].x+ " " + masterMesh[masterMesh.length-1][masterMesh[0].length-1].x);
         return sum;
     }
     
-    public void changeVar(){
-        
+    //called everytime movement vector of a submesh is changed
+    private void setMoveFactor(){
+        for(int i = 0; i < meshes.length; i++){
+            if(meshes[i].getMovement() != null) Vector3f.add(moveFactor, meshes[i].getMovement(), moveFactor);
+        }
+    }
+    
+    //set movement of a specific mesh
+    public void setMovement(int i, Vector3f v){
+        meshes[i].setMovement(v);
+        //careful, only allow one moving submesh
+        if(i == 0) up = true;
+        else up = false;
+        setMoveFactor();
     }
     
     
-    //SCRAPED methods**************************************************
+    
+    
+    
+    
+    
+    //*************************SCRAPED methods*********************************
     //Connect the SubMeshes and update masterMesh data
     public void connectMeshes(){
         for(int index = 0; index < meshes.length; index++){
@@ -851,4 +859,7 @@ public class Mesh {
         }
     }
     
+    private float calcDiffuse(float t, float g, float d){
+        return (float)(Math.pow(Math.E, (-(g*g))/(4*d*t)) / (4*Math.PI*d*t));
+    }
 }
