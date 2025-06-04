@@ -43,14 +43,14 @@ import org.lwjgl.util.vector.Matrix4f;
  */
 public class FaultModel{
     private Mesh mesh;
-    private BufferedImage heightMap;
-    private BufferedImage faultMap;
+    public static BufferedImage heightMap;
+    private static BufferedImage faultMap;
     private final int DISPLAY_WIDTH = 800;
     private final int DISPLAY_HEIGHT = 600;
     
     private final int[] WINDOW_DIMENSIONS = {1200, 650};
-    private final float[] DEFAULT_CAMERA_POS = {3f, 8.5f,2f};
-    private final float[] DEFAULT_CAMERA_ROT = {27.84f, 135.64f};
+    private final float[] DEFAULT_CAMERA_POS = {60f, 28f, -25f};
+    private final float[] DEFAULT_CAMERA_ROT = {37.11f, 272.6f};
     private static float[] lightPosition = {200f, -10f, 0f, 1f};
     
     private final float ASPECT_RATIO = (float) WINDOW_DIMENSIONS[0] / (float) WINDOW_DIMENSIONS[1];
@@ -59,6 +59,7 @@ public class FaultModel{
     
     private boolean rain = false;
     private boolean move = false;
+    private boolean both = false;
     
     private int heightmapDisplayList;
     private Shader shader;
@@ -83,9 +84,15 @@ public class FaultModel{
     private static JFrame frame;
     private static Graphics2D g;
     
-    private String fileLoc = "src/faultmodel2/gradient3.jpg";
-    //dem10x10.png dem20x20.png dem38x38.png
-    //gaussian.jpg gradient3.png test.jpg
+    private int mode = 0;
+    
+    public static final String fileLoc = "inputData/test.JPG";
+    public static final boolean text = false;
+    private boolean save = false, draw = true;
+    //dem10x10.png dem20x20.png dem38x38.png //hard to run the last two
+    //gaussian.jpg gradient3.jpg test.jpg gradient6.jpg gradient7.jpg falsecolor20x20.png
+    //gradient8.png test.jpg
+    //1000x1000.txt
     
     /**
      * @param args the command line arguments
@@ -101,9 +108,18 @@ public class FaultModel{
         setUp();
         //somehow the precision can only be .1
 //        mesh.setMovement(0, new Vector3f(0f,0.01f,0.01f));//sideways
-        mesh.setMovement(0, new Vector3f(0f,-0.05f,0.05f));//go out
+//        mesh.setMovement(0, new Vector3f(0f,-0.05f,0.05f));//go out
 //        mesh.setMovement(0, new Vector3f(0f,0f,0.05f));////go up
-//                mesh.setMovement(0, new Vector3f(0f,-0.05f,0.00f));//go right
+//        mesh.setMovement(1, new Vector3f(0f,-0.05f,0.00f));//go right
+        
+        mesh.meshes[1].setUpLift(0.0000003f, 250f, 0f);//a = 0.000001f looks good
+//        mesh.meshes[0].setUpLift(0.00000001f, 128f, 0f);
+//        System.out.println(mesh.meshes[1].distanceFromFault(0, 0));
+//        System.out.println(mesh.meshes[1].distanceFromFault(0, 100) + "\n");
+//        System.out.println(mesh.meshes[1].findPerpendicularX(0, 0));
+//        System.out.println(mesh.meshes[1].findPerpendicularX(100, 0));
+//        mesh.meshes[0].setUpLift(-0.0001f, 300, 0);
+        
 //        System.out.println("factor" + 1/mesh.moveFactor.y);
         System.out.println(helpMessage);
         loop();
@@ -149,10 +165,10 @@ public class FaultModel{
         // Enable the sorting of shapes from far to near
         glEnable(GL_DEPTH_TEST);
         // Set the background to a blue sky colour
-        glClearColor(0, 0.75f, 1, 1);
+        glClearColor(1, 1, 1, 1);
         // Remove the back (bottom) faces of shapes for performance
         glEnable(GL_CULL_FACE);
-        glCullFace(GL_BACK);
+        glCullFace(GL_FRONT);
     }
     
     private void setUpLight(){
@@ -176,14 +192,15 @@ public class FaultModel{
             //get the height map
             //String file = JOptionPane.showInputDialog("File path of heightmap(ex: MyDocuments/images/stuff.jpg):");
 //            String heightMapFile = "src/faultmodel2/dem10x10.png";//current: Terrain2.bmp, test.jpg
-            String heightMapFile = fileLoc;
-            heightMap = ImageIO.read(new File(heightMapFile));
+            if(!text){
+            heightMap = ImageIO.read(new File(fileLoc));
+            }
             //        String faultMapFile = "src/faultmodel2/heightmap2f.jpg";
             //        faultMap = ImageIO.read(new File(faultMapFile));
             faultMap = new BufferedImage(1,1,1);//just for testing
             
             //create stream
-            FileInputStream colorStream = new FileInputStream("src/faultmodel2/lookup_5.png");
+            FileInputStream colorStream = new FileInputStream("inputData/lookup_5.png");
             PNGDecoder decoder = new PNGDecoder(colorStream);//use PNG image decoder
             //create a openGL bytebuffer to store PNG data
             ByteBuffer buffer = BufferUtils.createByteBuffer(4 * decoder.getHeight() * decoder.getWidth());
@@ -204,7 +221,7 @@ public class FaultModel{
         glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
         
         glEnable(GL_CULL_FACE);
-        glCullFace(GL_BACK);
+        glCullFace(GL_FRONT);
         
         shader = new Shader("src/faultmodel2/shader.vert", "src/faultmodel2/shader.frag");
         programID = shader.getProgram();
@@ -222,13 +239,16 @@ public class FaultModel{
             if (Keyboard.getEventKeyState()) {
                 if (Keyboard.getEventKey() == Keyboard.KEY_P) {
                     // Switch between normal mode, point mode, and wire-frame mode.
-                    int polygonMode = glGetInteger(GL_POLYGON_MODE);
-                    if (polygonMode == GL_LINE) {
-                        glPolygonMode(GL_FRONT, GL_FILL);
-                    } else if (polygonMode == GL_FILL) {
-                        glPolygonMode(GL_FRONT, GL_POINT);
-                    } else if (polygonMode == GL_POINT) {
-                        glPolygonMode(GL_FRONT, GL_LINE);
+//                    int polygonMode = glGetInteger(GL_POLYGON_MODE);
+                    if (mode == 0) {
+                        glPolygonMode(GL_BACK, GL_LINE);
+                        mode++;
+                    } else if (mode == 1) {
+                        glPolygonMode(GL_BACK, GL_POINT);
+                        mode++;
+                    } else if (mode == 2) {
+                        glPolygonMode(GL_BACK, GL_FILL);
+                        mode = 0;
                     }
                 }
                 if (Keyboard.getEventKey() == Keyboard.KEY_R){
@@ -251,24 +271,41 @@ public class FaultModel{
                     camera.setRotation(DEFAULT_CAMERA_ROT[0], DEFAULT_CAMERA_ROT[1], 0);
                 }
                 if (Keyboard.getEventKey() == Keyboard.KEY_T){
-                    for(int i = 0; i < 1000000; i++){
+                    for(int i = 0; i < 500000; i++){
                         mesh.rain();
                     }
                     draw();
                 }
-                if (Keyboard.getEventKey() == Keyboard.KEY_Y){
-                    for(int i = 0; i < 1000; i++){
-                        mesh.rainT();
+                if (Keyboard.getEventKey() == Keyboard.KEY_B){
+//                    both = !both;
+                    for(int i = 0; i < 500000; i++){
+                        mesh.rain();
+                        if(i % rainPerClick == 0)
+                            mesh.upLift();
                     }
+                    
                     draw();
                 }
+                if (Keyboard.getEventKey() == Keyboard.KEY_Y){
+//                    mesh.diffuse();//doesnt work :/
+                    mesh.rainT();
+                    draw();
+                    
+                    mesh.findChannels(save,draw);//(save,draw)
+                }
+                if (Keyboard.getEventKey() == Keyboard.KEY_G){
+                    mesh.drawImage();
+                }
+                if (Keyboard.getEventKey() == Keyboard.KEY_V){
+                    mesh.printPointInfo();
+                }
 //                if (Keyboard.getEventKey() == Keyboard.KEY_G){
-////                    lightPosition = new float[]{camera.x(), camera.y(), camera.z(), 1};
+//                    lightPosition = new float[]{camera.x(), camera.y(), camera.z(), 1};
 //                }
-//                if (Keyboard.getEventKey() == Keyboard.KEY_F){
-//                    mesh.diffuse3();
-//                    draw();
-//                }
+                if (Keyboard.getEventKey() == Keyboard.KEY_F){
+                    mesh.diffuse();
+                    draw();
+                }
                 //                if (Keyboard.getEventKey() == Keyboard.KEY_U){
                 //                    cleanUp();
                 //                }
@@ -291,18 +328,14 @@ public class FaultModel{
     }
     
     private void loop(){
-        //        Timer time = new Timer();
-        //        //use timer to run tasks so it does not interfere with render
-        //        time.schedule(new TimerTask() {
-        //
-        //            @Override
-        //            public void run() {
-        //
-        //            }
-        //        }, 300);
-        
         while(!Display.isCloseRequested()){
-            
+//            if(both){
+//                for(int i = 0; i < rainPerClick; i++){
+//                    mesh.rain();
+//                }
+//                mesh.upLift();
+//                draw();
+//            }
             if(rain){
                 for(int i = 0; i < rainPerClick; i++){
                     mesh.rain();
@@ -310,20 +343,21 @@ public class FaultModel{
                 draw();
             }
             if(move){
-                
-                mesh.move();
-                moveSyncCounter++;
-                if(Math.abs(mesh.moveFactor.y) > Math.abs(mesh.moveFactor.z)){
-                    syncAfterMove = (int)(1/Math.abs(mesh.moveFactor.y));
-                }else{
-                    syncAfterMove = (int)(1/Math.abs(mesh.moveFactor.z));
-                }
-                if(moveSyncCounter == syncAfterMove){//try to keep this as high as possible
-                    mesh.sync();          //it "eats" the mesh if its too low
-                    moveSyncCounter = 0;
-                }
+                mesh.upLift();
+//                mesh.move();
+//                moveSyncCounter++;
+//                if(Math.abs(mesh.moveFactor.y) > Math.abs(mesh.moveFactor.z)){
+//                    syncAfterMove = (int)(1/Math.abs(mesh.moveFactor.y));
+//                }else{
+//                    syncAfterMove = (int)(1/Math.abs(mesh.moveFactor.z));
+//                }
+//                if(moveSyncCounter == syncAfterMove){//try to keep this as high as possible
+//                    mesh.sync();          //it "eats" the mesh if its too low
+//                    moveSyncCounter = 0;
+//                }
                 draw();
             }
+            
             render();
             
             input();
@@ -368,7 +402,7 @@ public class FaultModel{
                 for(int i = 0; i < rainTrace[n].size(); i++){
                     v = (Vector3f) rainTrace[n].get(i);
                     
-                    glVertex3f(v.z, v.x + 0.01f, v.y);
+                    glVertex3f(v.z, v.x + 0.01f, -v.y);
                 }
                 glEnd();
             }
@@ -416,7 +450,7 @@ public class FaultModel{
         
         glNewList(heightmapDisplayList, GL_COMPILE);
         // Scale back the display list so that its proportions are acceptable.
-        glScalef(0.2f, 0.05f, 0.2f);
+        glScalef(0.2f, 0.1f, 0.2f);
         glNormal3f(0,-1,0);
         // Iterate over the 'strips' of heightmap data.
         Vector3f p1,p2,p3,p4;
@@ -466,7 +500,7 @@ public class FaultModel{
     //draw a single point
     //NOTE: mesh(x,y,z) --> openGL(z,x,y)
     private void vx(Vector3f p){
-        glVertex3f(p.z,p.x,p.y);
+        glVertex3f(p.z,p.x,-p.y);
     }
     
     //updates the information window

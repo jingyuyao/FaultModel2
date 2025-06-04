@@ -5,6 +5,7 @@
 package faultmodel2;
 
 import java.awt.Color;
+import java.awt.Graphics2D;
 import java.awt.HeadlessException;
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -16,85 +17,89 @@ import org.lwjgl.util.vector.Vector3f;
 import java.awt.Point;
 import java.util.ArrayList;
 import java.util.Random;
+import java.awt.Image;
+import java.awt.List;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.Reader;
+import java.util.Iterator;
+import java.util.Scanner;
+import javax.imageio.*;
+import javax.swing.JFrame;
 
 /**
  *
  * @author Jingyu Yao
  */
 public class Mesh {
-    private SubMesh[] meshes;//[0]up, [1]down
+    //"null" point is defined with x = -1.0f, all algorithms ignores "null" points
+    public SubMesh[] meshes;//[0]up, [1]down
     private Point[] borders;
     public Vector3f[][] masterMesh;//x is height, (y,z) is location
     private Vector3f[][] masterMeshCopy;
     //faults should be ordered from center to top, then center to bottom
     private FaultLine[] faultLines;//Worry about 1 fault for now.. lol
-    private Vector2f faultVector;
-    float iniMass;
+    public static Vector2f faultVector = new Vector2f(0f,250f);//x=m, y=b no small decimals
+    //actual fault m=1.02 b=-220, simulation fault m=0 b=128
+    public float iniMass;
     public ArrayList<Vector3f> rainStrip;
     public Vector3f moveFactor = new Vector3f(0f,0f,0f);//combines all the movement vector of the submeshes into one
-                        //used to see after how long should sync be called to improve efficiency
-      
-    boolean up = false;//default moving submesh = down
-    
-    //"null" point is defined with x = -1.0f, all algorithms ignores "null" points
-    
+    private Random ran = new Random();//random generator
+    private boolean up = false;//default moving submesh = down
     private int meshSize;//total points
-    public float max = 0;
+    public float max = 0;//max height on the mesh, used for shader
+    private int sizeX, sizeY;//size of masterMesh
+    private final int infiniteLoopStopper = 200;
     
+    //info variables
     public int erodeCounter = 0, diffuseCounter = 0, outBoundCounter = 0, numException = 0;
     public int infLoop = 0, normRain = 0, normErode = 0, cover = 0, fill = 0;
     public float totalMassShift = 0.0f, massTaken = 0.0f, massDrop = 0.0f;
     
-    private int sizeX, sizeY;
-    
     //Position tracker
     private int posX = -1, posY = -1;
     
-    private Random ran = new Random();
-    
-    private final int infiniteLoopStopper = 200;
-    
-    private final int numberOfErodePerDiffuse = 10000;//easy to be divided plz
-    
-    
     //variables provided by Dr.Shaw
-    private float wk_fmin = 0.0f, wk_fmax = 0.3f, wk_slp = 2.0f;
+    //delx0 = (wk_a * h + wk_b) / (h + wk_c) * h * (1/distance);//diffusion equation
+    private float wk_fmin = 0.0f, wk_fmax = 1f, wk_slp = 2.0f;
     private float wk_carrylength = 20;
     private float wk_a = wk_fmax;
     private float wk_c = (float) ((wk_fmax - wk_fmin) / (wk_fmax - 0.5 * wk_fmin) * wk_slp);
     private float wk_b = wk_c * wk_fmin;
     private float walker = 0;
     
+    //diffusion variables
+    private float diffuseConstant = 0.1f;//for avgDiffuse, between 0.01 ~ 0.05?
+    private final int numberOfErodePerDiffuse = 10000;//ratio of erode:diffuse
     
-    private float diffuseConstant = 0.1f;//for avgDiffuse
+    private final int numberOfAvalanchePerDiffuse = 1000000;
+    private int avalancheCounter = 0;
     
+    //flux and channel variables
+    public int[][] flux;//how many times a rain passes a point
+    private final float fluxMulti = 2f;//3-6 for channel, 47 max for ridge
+    private final int channelCutOff = 10;
+    private ArrayList<ArrayList<Point>> allChannels;
+    private ArrayList<Float> channelCurve;
+    ArrayList<Float> channelHeights;
+    private float avgCurve = 0f;
+    private boolean ridge = false;
+    private int colorStage1 = 2, colorStage2 = 3;
+    private static int time = 0;
     
-    //diffusion equation NOT USED***************************
-    private float timeStep = 1f;
-    private float gridSize = 1f;
-    private float D = 10f;
-    private float diffuseAmount = (float)(Math.pow(Math.E, (-(gridSize*gridSize))/(4*D*timeStep)) / (4*Math.PI*D*timeStep));
-    private float maxDiffuse = 3 * wk_fmax;//for diffuse4, not used
+    private JFrame frame;
+    private String saveFolder = "outputData/set20";
+    private int fileCounter = 0;
     
     
     public Mesh(BufferedImage heightMap, BufferedImage faultMap, int faults){
-//        System.out.println(diffuseAmount);
+        //        System.out.println(diffuseAmount);
         faultLines = new FaultLine[faults];
         meshes = new SubMesh[faults + 1];//initialize array
         
-        //instantiate elements of array
-        for(int index = 0; index < faults + 1; index++){
-            meshes[index] = new SubMesh(heightMap.getWidth(),heightMap.getHeight(), new Vector3f(0f,0f,0f));
-        }
-        
         load(heightMap, faultMap);
-        //testing
-        //                for(int i = 0; i < heightMap.getWidth(); i++){
-        //                    for(int j = 0; j < heightMap.getHeight(); j++){
-        //                        System.out.print(masterMesh[i][j].x + " ");
-        //                    }
-        //                    System.out.println();
-        //                }
         
         max = masterMesh[0][0].x;
         
@@ -105,53 +110,88 @@ public class Mesh {
                 }
             }
         }
+        //        System.out.println(max);
         iniMass = totalMass();
         masterMeshCopy = masterMesh;
         //        masterMesh[0][0].x = 200;
         //        masterMesh[215][215].x = 200;
+        frame = new JFrame("Yoloswag");
+        frame.setSize(masterMesh.length,masterMesh[0].length);
+        //        frame.setVisible(true);
+//        System.out.println(masterMesh[100][100].x);
     }
     
     //Load the mesh and all necessary information
     private void load(BufferedImage heightMap, BufferedImage faultMap){
-        Random ran = new Random();
-        sizeX = heightMap.getWidth();
-        sizeY = heightMap.getHeight();
-        
-        //create masterMesh
-        masterMesh = new Vector3f[sizeY][sizeX];
-        
-        meshSize = (heightMap.getWidth() - 1) * (heightMap.getHeight() - 1);
-        Color c;
-        float h;
-        //add data into the masterMesh
-        for (int i = 0; i < heightMap.getWidth(); i++) {
-            for (int j = 0; j < heightMap.getHeight(); j++) {
-                c = new Color(heightMap.getRGB(i, j));
-                h = c.getBlue();
-                if(h == 255) h = -1.0f;
-                else h = h + ran.nextFloat();//disable for actual map?
-                masterMesh[i][j] = new Vector3f(h,i,j);
+        if(!FaultModel.text){
+            Random ran = new Random();
+            sizeX = heightMap.getWidth();
+            sizeY = heightMap.getHeight();
+            //create masterMesh
+            masterMesh = new Vector3f[sizeY][sizeX];
+            flux = new int[sizeY][sizeX];
+            
+            meshSize = (heightMap.getWidth() - 1) * (heightMap.getHeight() - 1);
+            Color c;
+            float h;
+            //add data into the masterMesh
+            for (int i = 0; i < sizeX; i++) {
+                for (int j = 0; j < sizeY; j++) {
+                    c = new Color(heightMap.getRGB(i, j));
+                    h = c.getBlue();
+                    //                h = c.getBlue() + c.getGreen()*10 + c.getRed()*100;
+                    if(h == 255) h = -1.0f;
+                    //                if(h == 535500) h = -1.0f;
+                    else h = h + ran.nextFloat()*0.5f;//disable for actual map? nope
+                    masterMesh[i][j] = new Vector3f(h,i,j);
+                }
+            }
+        }else{
+            try(Scanner br = new Scanner(new FileReader(FaultModel.fileLoc))){
+                float h;
+                float none;
+                br.next();
+                sizeX = br.nextInt(); br.nextLine();
+                //                System.out.println(sizeX);
+                br.next();
+                sizeY = br.nextInt(); br.nextLine();
+                //                System.out.println(sizeY);
+                br.nextLine(); br.nextLine();br.nextLine();
+                br.next();
+                none = br.nextFloat(); br.nextLine();
+                //                System.out.println(none);
+                //create masterMesh
+                masterMesh = new Vector3f[sizeY][sizeX];
+                flux = new int[sizeY][sizeX];
+                
+                for (int i = 0; i < sizeX; i++) {
+                    for (int j = 0; j < sizeY; j++) {
+                        h = br.nextFloat();
+                        if(h == none) h = -1.0f;
+                        else h -= 580f;//580 is min height
+                        
+                        masterMesh[j][i] = new Vector3f(h,j,i);
+                    }
+                    br.nextLine();
+                }
+                //                System.out.println(masterMesh.length);
+            }catch(Exception e){
+                e.printStackTrace();
             }
         }
         
+        //instantiate elements of array
+        for(int index = 0; index < 2; index++){
+            meshes[index] = new SubMesh(sizeX,sizeY, new Vector3f(-1f,0f,0f));
+        }
         
         //Have to auto-load faults from a source
         //For now, use manual input for testing
+        //NOT USED
         faultLines[0] = new FaultLine(513);
         for(int index2 = 0; index2 < faultLines[0].fault.length; index2++){
             faultLines[0].fault[index2] = new Vector2f(index2,index2);
         }
-        
-        //Now load the SubMeshes using top-down method
-        //only consider a single faultline
-        //        boolean upOrBelow = true;
-        //        for(int index = 0; index < meshes.length; index++){
-        //            loadSubMeshes(meshes[index], upOrBelow, 0);
-        //            upOrBelow = !upOrBelow;
-        //        }
-        
-        //test new method of spliting faults
-        faultVector = new Vector2f(1,1);
         
         loadSubMeshesV2();
     }
@@ -188,7 +228,7 @@ public class Mesh {
         for(int j = 0; j < masterMesh.length; j++){
             for(int i = 0; i < masterMesh[0].length; i++){
                 if(masterMesh[i][j].x != -1){
-                    cur = new Vector2f(faultVector.x * i, faultVector.y * i);
+                    cur = new Vector2f(i, faultVector.x*i + faultVector.y);
                     p = masterMesh[i][j];
                     if(p.z > cur.y){
                         meshes[0].mesh[i][j] = p;
@@ -219,6 +259,9 @@ public class Mesh {
         Point nextP;//next point to process
         Vector3f nextVec;//vector at next point
         boolean inBound;
+        
+        //add value to flux
+//        flux[i][j]++;
         
         deltaH = getDeltaH(h,i,j);
         
@@ -373,6 +416,11 @@ public class Mesh {
             diffuse();
             diffuseCounter++;
         }
+//        if(erodeCounter % numberOfAvalanchePerDiffuse == 0){
+//            avalanche();
+//            avalancheCounter++;
+//        }
+        
         
         //point after erode
         Point nextPoint = erode(oldP);
@@ -405,11 +453,59 @@ public class Mesh {
     
     //rain method for testing
     public void rainT(){
-        int i = ran.nextInt(masterMesh.length);
-        int j = ran.nextInt(masterMesh[1].length);
-        Point oldP = new Point(i,j);
-        diffuse();
-        diffuseCounter++;
+        flux = new int[sizeY][sizeX];
+        Point oldP;
+        Point nextPoint;
+        Point prevP;
+        int loopCounter;
+        //actual fake rain
+        for(int i = 0; i < masterMesh.length; i++){
+            for(int j = 0; j < masterMesh[1].length; j++){
+                if(masterMesh[i][j].x != -1.0f){
+                    oldP = new Point(i,j);
+                    nextPoint = fakeErode(oldP);
+                    prevP = oldP;
+                    loopCounter = 0;
+                    while(!nextPoint.equals(oldP) && loopCounter <= infiniteLoopStopper){
+                        loopCounter++;
+                        oldP = new Point(nextPoint.x,nextPoint.y);
+                        nextPoint = fakeErode(oldP);
+                        if(prevP.equals(nextPoint)){
+                            break;
+                        }
+                        else prevP = oldP;
+                    }
+                    
+                    erodeCounter++;
+                }
+            }
+        }
+    }
+    
+    //fake erosion used to test flux
+    private Point fakeErode(Point p){
+        //position of the point being evaluated
+        int i = p.x;
+        int j = p.y;
+        Vector3f vec = masterMesh[i][j];//vector at this point
+        float h = vec.x;//current height
+        float[] deltaH;//change in height for surrounding
+        float greatV;//greatest deltaH
+        Point nextP;//next point to process
+        flux[i][j]++;
+        deltaH = getDeltaH(h,i,j);
+        
+        greatV = getGreatV(deltaH);
+        
+        nextP = new Point(i + posX, j + posY);
+        //if its not the lowest
+        if(greatV >= 0){
+            return nextP;
+        }
+        else{//else if it is the lowest point
+            masterMesh[i][j].x += -greatV;
+            return p;
+        }
     }
     
     //total avgDiffuse
@@ -447,7 +543,7 @@ public class Mesh {
         }
         float hg = (h - ht/avaP) * diffuseConstant;
         if(hg > 0){
-//            if(hg > maxDiffuse){hg = maxDiffuse;}
+            //            if(hg > maxDiffuse){hg = maxDiffuse;}
             posClean();
             posNext();
             float perNeighbor = (0.25f * (hg));
@@ -470,6 +566,43 @@ public class Mesh {
         }
     }
     
+    public void avalanche(){
+        for(int i = 0; i < masterMesh.length - 1; i++){
+            for(int j = 0; j < masterMesh[0].length - 1; j++){
+                float curH = masterMesh[i][j].x;
+                float min = 10000f;
+                float h;
+                int minPos = -1;
+                posClean();//reset posX and posY to -1
+                for(int index = 0; index < 8; index++){
+                    try{
+                        h = masterMesh[i + posX][j + posY].x;
+                        if(h != -1f && h < min){
+                            min = h;
+                            minPos = index;
+                        }
+                    }catch(Exception e){
+                    }
+                    posNext();//increment posX and posY correctly
+                }
+                
+                if(minPos != -1){
+                    posClean();
+                    for(int dix = 0; dix < minPos; dix++){
+                        posNext();
+                    }
+                    h = masterMesh[i + posX][j + posY].x;
+                    float dH = (curH - h) / 2;
+                    masterMesh[i][j].x -= dH;
+                    masterMesh[i + posX][j + posY].x += dH;
+                    
+                }
+                
+            }
+        }
+    }
+    
+    //depreciated
     //Move the submeshes
     public void move(){
         for(int index = 0; index < meshes.length; index++){
@@ -478,6 +611,15 @@ public class Mesh {
         update();
     }
     
+    //uplift the submeshes
+    public void upLift(){
+        for(int index = 0; index < meshes.length; index++){
+            meshes[index].upLift();
+        }
+        update();
+        sync();
+        time++;
+    }
     
     //update the value of each point but does not "reconnect" them
     private void update(){
@@ -485,7 +627,7 @@ public class Mesh {
         for(int index = 0; index < meshes.length; index++){
             for(int i = 0; i < meshes[index].mesh.length; i++){
                 for(int j = 0; j < meshes[index].mesh[0].length; j++){
-                    if(meshes[index].mesh[i][j].x != -1){
+                    if(meshes[index].mesh[i][j].x != -1f){
                         masterMesh[i][j] = meshes[index].mesh[i][j];
                     }
                 }
@@ -520,11 +662,6 @@ public class Mesh {
             Vector3f.add(totalDisplacement, meshes[i].getDisplacement(), totalDisplacement);
         }
         
-//        if(totalDisplacement.y < 1 && totalDisplacement.y > -1 && totalDisplacement.z < 1 && totalDisplacement.z > -1){
-//            System.out.println("never happened");
-//            return;
-//        }
-            
         //        System.out.println(totalDisplacement);
         //        System.out.println(meshes[0].getDisplacement());
         //if the displacement is 3.5+ it is 4
@@ -554,10 +691,10 @@ public class Mesh {
             xd = yd;
         
         Vector3f[][] temp = new Vector3f[sizeY + (int)xd][sizeX + (int)yd];
+        int[][] tempFlux = new int[sizeY + (int)xd][sizeX + (int)yd];
         //        System.out.println(temp.length + " w" + temp[0].length);
         for(int i = 0; i < temp.length; i++){
             for(int j = 0; j < temp[0].length; j++){
-                //                                temp[i][j] = new Vector3f(-1f,0f,0f);
                 temp[i][j] = new Vector3f(-1f,i,j);
             }
         }
@@ -593,33 +730,18 @@ public class Mesh {
                         ty = (int)y;
                     
                     temp[tx][ty] = masterMesh[i][j];
+                    tempFlux[tx][ty] = flux[i][j];
                 }
             }
         }
         //replace the masterMesh with the new one
         masterMesh = temp;
-        
-        //now we need to fix the gap
-        //according to fault don work so good, according to -1.0f maybe?
-//        int yPoint;
-//        if(up){
-//            for(int xPoint = 0; xPoint < masterMesh.length; xPoint++){
-//                yPoint = (int)(faultVector.y * xPoint) + 1;
-//                try{
-//                    if(masterMesh[xPoint][yPoint].x == -1.0f){
-//                        //                    masterMesh[xPoint][yPoint].x = masterMesh[xPoint][yPoint-1].x + (1/meshes[0].getMovement().));
-//                        masterMesh[xPoint][yPoint].x = 100f;
-//                    }
-//                }catch(Exception e){
-//                    e.printStackTrace();
-//                }
-//            }
-//        }
-        
+        flux = tempFlux;
         
         //instantiate elements of array
         for(int index = 0; index < meshes.length; index++){
-            meshes[index] = new SubMesh(masterMesh.length, masterMesh[0].length, meshes[index].getMovement(), meshes[index].getDisplacement());
+            //            meshes[index] = new SubMesh(masterMesh.length, masterMesh[0].length, meshes[index].getMovement(), meshes[index].getDisplacement());
+            meshes[index] = new SubMesh(masterMesh.length, masterMesh[0].length, meshes[index].upLiftRate,meshes[index].scaleLength,meshes[index].faultSlipRate, meshes[index].getDisplacement());
         }
         //        System.out.println(meshes[0].mesh.length + " s w" + meshes[0].mesh[0].length);
         
@@ -638,8 +760,8 @@ public class Mesh {
                 }
             }
         }
-//        System.out.println(masterMesh[0][0].x + " " + masterMesh[masterMesh.length-1][0].x
-//                + " " + masterMesh[0][masterMesh[0].length-1].x+ " " + masterMesh[masterMesh.length-1][masterMesh[0].length-1].x);
+        //        System.out.println(masterMesh[0][0].x + " " + masterMesh[masterMesh.length-1][0].x
+        //                + " " + masterMesh[0][masterMesh[0].length-1].x+ " " + masterMesh[masterMesh.length-1][masterMesh[0].length-1].x);
         return sum;
     }
     
@@ -659,11 +781,624 @@ public class Mesh {
         setMoveFactor();
     }
     
+    public static int getTime(){
+        return time;
+    }
     
+    //get highest fluxes
+    //@param multiplier
+    public int[][] getDenseFlux(){
+        float percentage;
+        int avgCounter = 0;
+        float avgPercentage = 0;
+        float highestFluxPercentage = 0;
+        int[][] fluxAnalysis = new int[flux.length][flux[0].length];
+        
+        
+        //find avg percentage rate
+        for(int i = 0; i < flux.length; i++){
+            for(int j = 0; j < flux[0].length; j++){
+                if(flux[i][j] != 0){
+                    percentage = (float)(flux[i][j])/erodeCounter;
+                    avgPercentage += percentage;
+                    avgCounter++;
+                    if(percentage > highestFluxPercentage) highestFluxPercentage = percentage;
+                }
+            }
+        }
+        
+        //find avg percentage rate and initialize self flux by averaging
+//        int f=0,c=0;
+//        for(int i = 0; i < flux.length; i++){
+//            for(int j = 0; j < flux[0].length; j++){
+//                if(flux[i][j] != 0){
+//                    posClean();
+//                    f += flux[i][j];
+//                    for(int id = 0; id < 8; id++){
+//                        try{
+//                            f += flux[i+posX][j+posY];
+//                            c++;
+//                        }catch(Exception e){}
+//                        posNext();
+//                    }
+//                    if(c != 0)
+//                        fluxAnalysis[i][j] = f / c;
+//                    percentage = (float)(fluxAnalysis[i][j])/erodeCounter;
+//                    avgPercentage += percentage;
+//                    avgCounter++;
+//                    if(percentage > highestFluxPercentage) highestFluxPercentage = percentage;
+//                    f = 0;
+//                    c = 0;
+//                }
+//            }
+//        }
+        
+        avgPercentage = avgPercentage / avgCounter;
+//        System.out.println(avgPercentage);
+        //1st pass by percentage
+        for(int i = 0; i < fluxAnalysis.length; i++){
+            for(int j = 0; j < fluxAnalysis[0].length; j++){
+                if(flux[i][j] != 0){
+//                if(fluxAnalysis[i][j] != 0){
+                    percentage = (float)(flux[i][j])/erodeCounter;
+//                    percentage = (float)(fluxAnalysis[i][j])/erodeCounter;
+                    if(ridge){
+                        if(percentage < avgPercentage/fluxMulti){
+                            fluxAnalysis[i][j] = flux[i][j];
+                        }
+//                        if(percentage > avgPercentage/fluxMulti){
+//                            fluxAnalysis[i][j] = 0;
+//                        }
+                    }else{
+                        if(percentage > avgPercentage*fluxMulti){
+                            fluxAnalysis[i][j] = flux[i][j];
+                        }
+//                        if(percentage < avgPercentage*fluxMulti){
+//                            fluxAnalysis[i][j] = 0;
+//                        }
+                    }
+                }
+            }
+        }
+        
+        boolean solo;
+        //2nd pass get rid of all the single spots
+        for(int i = 0; i < fluxAnalysis.length; i++){
+            for(int j = 0; j < fluxAnalysis[0].length; j++){
+                solo = true;
+                posClean();
+                for(int index = 0; index < 8; index++){
+                    try{
+                        if(fluxAnalysis[i+posX][j+posY] != 0) solo = false;
+                    }catch(Exception e){}
+                    posNext();
+                }
+                if(solo == true) fluxAnalysis[i][j] = 0;
+            }
+        }
+        
+        return fluxAnalysis;
+    }
     
+    public void drawImage(){
+        BufferedImage img = new BufferedImage(sizeX,sizeY,BufferedImage.TYPE_INT_RGB);
+        Color colo;
+        int f;
+        for (int i = 0; i < sizeX; i++) {
+            for (int j = 0; j < sizeY; j++) {
+                if(masterMesh[i][j].x != -1f){
+                    f = (int)(masterMesh[i][j].x);
+                    colo = new Color(f,f,f);
+                    img.setRGB(i, j, colo.getRGB());
+                }
+            }
+        }
+        try{
+            ImageIO.write(img, "png", new File(saveFolder + "/ini.png"));
+        }catch(IOException e){
+            e.printStackTrace();
+        }
+    }
     
+    //draw flux
+    public void drawChannel(int[][] f, boolean write){
+        if(write){
+            BufferedImage img;
+//            if(!FaultModel.text)
+//                img= FaultModel.heightMap;
+//            else{
+                img = new BufferedImage(sizeX,sizeY,BufferedImage.TYPE_INT_RGB);
+                //need to make our own heightmap if its from data
+                Color colo;
+                float ff;
+                for (int i = 0; i < sizeX; i++) {
+                    for (int j = 0; j < sizeY; j++) {
+                        if(masterMesh[i][j].x != -1f){
+                            ff = masterMesh[i][j].x / max;
+                            colo = new Color(ff,ff,ff);
+                            img.setRGB(i, j, colo.getRGB());
+                        }
+                    }
+                }
+//            }
+            Graphics2D g = img.createGraphics();
+            g.setColor(Color.red);
+            
+            //render pass
+            for(int i = 0; i < f.length; i++){
+                for(int j = 0; j < f[0].length; j++){
+                    if(f[i][j] != 0){
+                        g.drawLine(i, j, i, j);
+                    }
+                }
+            }
+            try{
+                ImageIO.write(img, "png", new File(saveFolder + "/" + fileCounter + ".png"));
+            }catch(IOException e){
+                e.printStackTrace();
+            }
+        }else{
+            Graphics2D g = (Graphics2D)frame.getGraphics();
+            g.setColor(Color.red);
+            
+            //render pass
+            for(int i = 0; i < f.length; i++){
+                for(int j = 0; j < f[0].length; j++){
+                    if(f[i][j] != 0)
+                        g.drawLine(i, j, i, j);
+                }
+            }
+        }
+    }
     
+    //draw color coded channels
+    public void drawChannel(ArrayList<ArrayList<Point>> a, boolean write){
+        if(write){
+            //            BufferedImage img = new BufferedImage(flux.length,flux[0].length, BufferedImage.TYPE_INT_ARGB);
+            BufferedImage img;
+//            if(!FaultModel.text)
+//                img= FaultModel.heightMap;
+//            else{
+                img = new BufferedImage(sizeX,sizeY,BufferedImage.TYPE_INT_RGB);
+                //need to make our own heightmap if its from data
+                Color colo;
+                float f;
+                for (int i = 0; i < sizeX; i++) {
+                    for (int j = 0; j < sizeY; j++) {
+                        if(masterMesh[i][j].x != -1f){
+                            f = masterMesh[i][j].x / max;
+                            if(f>1f) f = 1f;
+                            if(f<0f) f = 0f;
+                            colo = new Color(f,f,f);
+                            img.setRGB(i, j, colo.getRGB());
+                        }
+                    }
+                }
+//            }
+            Graphics2D g = img.createGraphics();
+            
+            Iterator muahaha; Point plz;
+            int x,y;
+            
+            
+            for(int index = 0; index < a.size(); index++){
+                //set color of channel
+                g.setColor(new Color(ran.nextFloat()*0.7f+0.3f,ran.nextFloat()*0.7f+0.3f,ran.nextFloat()*0.7f+0.3f));
+                muahaha = a.get(index).iterator();
+                while(muahaha.hasNext()){
+                    plz = (Point)muahaha.next();
+                    x = plz.x; y = plz.y;
+                    g.drawLine(x, y, x, y);
+                }
+            }
+            
+            try{
+                ImageIO.write(img, "png", new File(saveFolder + "/" + fileCounter + ".png"));
+            }catch(IOException e){
+                e.printStackTrace();
+            }
+        }else{
+            Graphics2D g = (Graphics2D)frame.getGraphics();
+            int c = 0;
+            Iterator muahaha; Point plz;
+            int x,y;
+            
+            for(int index = 0; index < a.size(); index++){
+                //set color of channel
+                if(c == 0){
+                    g.setColor(Color.red);
+                }else if(c == 1){
+                    g.setColor(Color.blue);
+                }else if(c == 2){
+                    g.setColor(Color.green);
+                }else if(c == 4){
+                    g.setColor(Color.magenta);
+                }
+                if(c == 4) c = 0;
+                else c++;
+                muahaha = a.get(index).iterator();
+                while(muahaha.hasNext()){
+                    plz = (Point)muahaha.next();
+                    x = plz.x; y = plz.y;
+                    g.drawLine(x, y, x, y);
+                }
+            }
+        }
+    }
     
+    //draw color coded curvature data
+    public void drawChannel(ArrayList<ArrayList<Point>> a, ArrayList<Float> c, boolean write){
+        if(write){
+            //            BufferedImage img = new BufferedImage(flux.length,flux[0].length, BufferedImage.TYPE_INT_ARGB);
+            BufferedImage img;
+//            if(!FaultModel.text)
+//                img= FaultModel.heightMap;
+//            else{
+                img = new BufferedImage(sizeX,sizeY,BufferedImage.TYPE_INT_RGB);
+                //need to make our own heightmap if its from data
+                Color colo;
+                float f;
+                for (int i = 0; i < sizeX; i++) {
+                    for (int j = 0; j < sizeY; j++) {
+                        if(masterMesh[i][j].x != -1f){
+                            f = masterMesh[i][j].x / max;
+                            if(f>1f) f = 1f;
+                            if(f<0f) f = 0f;
+                            colo = new Color(f,f,f);
+                            img.setRGB(i, j, colo.getRGB());
+                        }
+                    }
+                }
+//            }
+            
+            Graphics2D g = img.createGraphics();
+            
+            Iterator muahaha; Point plz;
+            Iterator curveIter = c.iterator(); float imaboss;
+            int x,y;
+            
+            for(int index = 0; index < a.size(); index++){
+                muahaha = a.get(index).iterator();
+                while(muahaha.hasNext()){
+                    plz = (Point)muahaha.next();
+                    imaboss = (float)curveIter.next();
+                    // blue < 0 < green <= 1 < red <= 2 < pink
+                    if(imaboss < 0)
+                        g.setColor(Color.blue);
+                    else if(imaboss > 0 && imaboss <= colorStage1)
+                        g.setColor(new Color(0,imaboss/colorStage1,0));
+                    else if(imaboss > colorStage1 && imaboss <= colorStage2)
+                        g.setColor(new Color(imaboss/colorStage2,0,0));
+                    else
+                        g.setColor(Color.pink);
+                    
+                    x = plz.x; y = plz.y;
+                    g.drawLine(x, y, x, y);
+                }
+            }
+            
+            //draw faultline
+            g.setColor(Color.red);
+            int yd;
+            for(int xd = 0; xd < sizeX; xd++){
+                yd = (int)(xd*faultVector.x + faultVector.y);
+                g.drawLine(xd, yd, xd, yd);
+            }
+            
+            try{
+                ImageIO.write(img, "png", new File(saveFolder + "/" + fileCounter + ".png"));
+            }catch(IOException e){
+                e.printStackTrace();
+            }
+        }else{
+            Graphics2D g = (Graphics2D)frame.getGraphics();
+            Iterator muahaha; Point plz;
+            int x,y;
+            
+            for(int index = 0; index < a.size(); index++){
+                muahaha = a.get(index).iterator();
+                while(muahaha.hasNext()){
+                    plz = (Point)muahaha.next();
+                    x = plz.x; y = plz.y;
+                    g.drawLine(x, y, x, y);
+                }
+            }
+        }
+    }
+    
+    //find channel method, sort and organize dots found in draw method
+    public void findChannels(boolean save, boolean draw){
+//        System.out.println(masterMesh[100][100].x);
+        int[][] dflux = getDenseFlux();
+        channelHeights = new ArrayList<>();//arraylist to hold channel heights
+        channelCurve = null;//curve and distance to fault
+        allChannels = new ArrayList<>();
+        int channelLength = 1;//cur length of a channl
+        avgCurve = 0f;
+        
+        ArrayList<Point> curChannel;//maintain the ability to store list of channels
+        float curMaxH,curMinH;
+        Iterator iter; Point iterP;
+        int hx,hy,lx,ly;//coordinates of highest and lowest points
+        int nx,ny;
+        
+        //loop logic: go over every single point
+        //if point have dense flux, find all the pts that are connected to it
+        //store the "string" of points in an array
+        //set the flux to 0 for each points stored so the points don end up in
+        //multiple strings
+        for(int i = 0; i < dflux.length; i++){
+            for(int j = 0; j < dflux[0].length; j++){
+                //if logic: find highest and lowest neighbor with flux
+                //add each side, gg
+                if(dflux[i][j] != 0){
+                    dflux[i][j] = 0;//set flux to 0 after we done with it
+                    //highest flux recursive way
+                    while(findFluxNeighbor(dflux,i,j)){
+                        curChannel = new ArrayList<>();
+                        curChannel.add(new Point(i,j));//add current pt
+                        nx = i; ny = j;
+                        //find channel to highest flux
+                        while(findFluxNeighbor(dflux,nx,ny)){
+                            nx+=posX; ny+=posY;
+                            curChannel.add(new Point(nx,ny));
+                            dflux[nx][ny] = 0;
+                            channelLength++;
+                        }
+                        //whether the found channel is actually a channel or not
+                        //first condition, string of pixels is > channelCutOff
+                        if(channelLength > channelCutOff){
+                            iter = curChannel.iterator();//iterator of cur channel
+                            iterP = (Point)curChannel.get(0);
+                            hx = iterP.x; hy = iterP.y;
+                            iterP = (Point)curChannel.get(curChannel.size() - 1);
+                            lx = iterP.x; ly = iterP.y;
+                            //only add if distance between start and finish is > channelCutOff
+                            if(Math.sqrt(Math.pow(hx-lx,2) + Math.pow(hy-ly,2)) > channelCutOff/2){
+                                //find deltaH
+                                curMinH = 10000; curMaxH = 0;
+                                while(iter.hasNext()){
+                                    iterP = (Point)iter.next();
+                                    if(masterMesh[iterP.x][iterP.y].x > curMaxH){
+                                        curMaxH = masterMesh[iterP.x][iterP.y].x;
+                                        
+                                    }
+                                    if(masterMesh[iterP.x][iterP.y].x < curMinH){
+                                        curMinH = masterMesh[iterP.x][iterP.y].x;
+                                        
+                                    }
+                                }
+                                
+                                channelHeights.add(curMaxH - curMinH);
+                                //add cur channel to total channels
+                                allChannels.add(curChannel);
+                            }
+                        }
+                        channelLength = 1;
+                    }
+                }
+            }
+        }
+        
+        //AT LEAST 2 POINTS
+        findCurve();
+        
+        if(save){
+            save();
+        }
+        
+        if(draw){
+//            drawChannel(allChannels,true);
+            drawChannel(allChannels,channelCurve,true);
+        }
+        fileCounter++;
+        System.out.println("done");
+    }
+    
+    //find curve at each point
+    private void findCurve(){
+        int ptCounter = 0;
+        float curCurve;
+        channelCurve = new ArrayList<>();
+        Iterator chIter = allChannels.iterator();
+        Iterator ptIter;
+        ArrayList<Point> list;
+        Point p1,p2;
+        int dir;
+        int dx,dy;
+        while(chIter.hasNext()){
+            list = (ArrayList<Point>)chIter.next();
+            ptIter = list.iterator();
+            p1 = (Point)ptIter.next();
+            
+            while(ptIter.hasNext()){
+                p2 = (Point)ptIter.next();
+                dx = p1.x - p2.x; dy = p1.y - p2.y;
+                
+                if((dx == 1 && dy == -1) || (dx == -1 && dy == 1))
+                    dir = 1;
+                else if((dx == 0 && dy == -1) || (dx == 0 && dy == 1))
+                    dir = 2;
+                else if((dx == -1 && dy == -1) || (dx == 1 && dy == 1))
+                    dir = 3;
+                else
+                    dir = 4;
+                channelCurve.add(calcCurve(p1.x,p1.y,dir));
+                if(ptIter.hasNext()) p1 = p2;
+                else{
+                    //process the last poor lonely point ;(
+                    dx = p2.x - p1.x; dy = p2.y - p1.y;
+                    if((dx == 1 && dy == -1) || (dx == -1 && dy == 1))
+                        dir = 1;
+                    else if((dx == 0 && dy == -1) || (dx == 0 && dy == 1))
+                        dir = 2;
+                    else if((dx == -1 && dy == -1) || (dx == 1 && dy == 1))
+                        dir = 3;
+                    else
+                        dir = 4;
+                    curCurve = calcCurve(p2.x,p2.y,dir);
+                    if(curCurve >= 0){
+                        avgCurve += curCurve;
+                        ptCounter++;
+                    }
+                    channelCurve.add(curCurve);
+                }
+            }
+        }
+        avgCurve = avgCurve/ptCounter;
+//        System.out.println("avgCurve" + avgCurve);
+    }
+    
+    //x,y direction, 1(topleft,downright) 2(top,bot) 3(topright,downleft) 4(left,right)
+    private float calcCurve(int i, int j, int dir){
+        float curveL = 0f, curveR = 0f;
+        boolean lb = false, rb = false;
+        int dx,dy;
+        if(dir == 1){
+            dx = 1; dy = 1;
+        }
+        else if(dir == 2){
+            dx = 1; dy = 0;
+        }
+        else if(dir == 3){
+            dx = -1; dy = 1;
+        }
+        else{
+            dx =0; dy = 1;
+        }
+        try{
+            if(masterMesh[i-dx-dx][j-dy-dy].x == -1.0f || masterMesh[i-dx][j-dy].x == -1.0f)
+                lb = true;
+            else
+                curveL = masterMesh[i-dx-dx][j-dy-dy].x - 2*masterMesh[i-dx][j-dy].x + masterMesh[i][j].x;
+        }catch(Exception e){
+            lb = true;
+        }
+        try{
+            if(masterMesh[i+dx+dx][j+dy+dy].x == -1.0f || masterMesh[i+dx][j+dy].x == -1.0f)
+                rb = true;
+            else
+                curveR = masterMesh[i+dx+dx][j+dy+dy].x - 2*masterMesh[i+dx][j+dy].x + masterMesh[i][j].x;
+        }catch(Exception e){
+            rb = true;
+        }
+        if(!lb && !rb) return (curveL + curveR) / 2f;
+        else if(!lb) return curveL;
+        else return curveR;
+    }
+    
+    private void save(){
+        try{
+            float avgHeight = 0;
+            float curHeight;
+            Iterator muahaha; Point plz;
+            Iterator curveHahaha = null;
+            if(channelCurve != null)
+                curveHahaha = channelCurve.iterator();
+            
+            int x,y;
+            
+            FileWriter fw = new FileWriter(saveFolder + "/" + fileCounter + ".txt");
+            BufferedWriter w = new BufferedWriter(fw);
+            
+            //print out param
+            w.write("//fileLoc: " + FaultModel.fileLoc); w.newLine();
+            w.write("//fluxMulti: " + fluxMulti + " channelCutOff: " + channelCutOff); w.newLine();
+            w.write("//wk_fmin: " + wk_fmin + " wk_fmax: " + wk_fmax); w.newLine();
+            w.write("//total_mass_shift: " + (totalMass() - iniMass)); w.newLine();
+            w.write("//colorstage1: " + colorStage1 + " colorstage2: " + colorStage2); w.newLine();
+            
+            //first line: # of channel
+            w.write("# " + allChannels.size()); w.newLine();
+            w.write("avgCurve " + avgCurve);w.newLine();w.newLine();
+            for(int index = 0; index < allChannels.size(); index++){
+                curHeight = channelHeights.get(index);
+                //each new channel begin with its index and height
+                w.write("c " + index + " " + curHeight); w.newLine();
+                avgHeight += curHeight;
+                muahaha = allChannels.get(index).iterator();
+                while(muahaha.hasNext()){
+                    plz = (Point)muahaha.next();
+                    x = plz.x; y = plz.y;
+                    //write each point of channel
+                    if(curveHahaha == null)
+                        w.write("p " + x + " " + y + " " + masterMesh[x][y].x);
+                    else
+                        w.write("p " + x + " " + y + " " + masterMesh[x][y].x + " " + (float)curveHahaha.next());
+                    w.newLine();
+                }
+                w.newLine();//extra line inbetween channels for readibility
+            }
+            
+            avgHeight = avgHeight / allChannels.size();//calculate avg height
+            w.write("avg " + avgHeight);//write avg height
+            w.newLine();
+            w.write("end");//write end to end
+            
+            w.close();//close writer
+        }catch(Exception e){
+            e.printStackTrace();
+        }
+    }
+    
+    public boolean empty(int[][] a){
+        for(int i = 0; i < a.length; i++){
+            for(int j = 0; j < a[0].length; j++){
+                if(a[i][j] != 0) return false;
+            }
+        }
+        return true;
+    }
+    
+    //max flux way
+    //return whether or not that point exists
+    private boolean findFluxNeighbor(int[][] f, int i, int j){
+        float h = masterMesh[i][j].x;
+        int greatV = 0;
+        int spot = -1;
+        posClean();
+        for(int index = 0; index < 8; index++){
+            try{
+                if(f[i+posX][j+posY] > greatV){
+                    greatV = f[i+posX][j+posY];
+                    spot = index;
+                }
+            }catch(Exception e){}
+            posNext();
+        }
+        if(spot == -1) return false;
+        
+        posClean();
+        //get pos to that location
+        for(int as = 0; as < spot; as++)
+            posNext();
+        return true;
+    }
+    
+    //testing tool
+    public void printPointInfo(){
+        System.out.println("X Y");
+        Scanner s = new Scanner(System.in);
+        int x = s.nextInt();
+        int y = s.nextInt();
+        //        posClean();
+        //        for(int index = 0; index < 8; index++){
+        //            try{
+        //                if(masterMesh[x+posX][y+posY].x != -1.0f){
+        //                    System.out.println(posX + " " + posY + " " + masterMesh[x+posX][y+posY].x);
+        //                }
+        //            }catch(Exception e){}
+        //            posNext();
+        //        }
+        try{
+            System.out.println(masterMesh[x-2][y].x + " " + masterMesh[x-1][y].x + " " + masterMesh[x][y].x + " " + masterMesh[x+1][y].x + " " + masterMesh[x+2][y].x);
+            float left = masterMesh[x-2][y].x - 2*masterMesh[x-1][y].x + masterMesh[x][y].x;
+            System.out.println(left);
+            float right = masterMesh[x][y].x - 2*masterMesh[x+1][y].x + masterMesh[x+2][y].x;
+            System.out.println(right);
+            System.out.println((left + right)/2);
+        }catch(Exception e){}
+    }
     
     //*************************SCRAPED methods*********************************
     //Connect the SubMeshes and update masterMesh data
@@ -690,6 +1425,13 @@ public class Mesh {
             }
         }
     }
+    
+    //diffusion equation NOT USED***************************
+    private float timeStep = 1f;
+    private float gridSize = 1f;
+    private float D = 10f;
+    private float diffuseAmount = (float)(Math.pow(Math.E, (-(gridSize*gridSize))/(4*D*timeStep)) / (4*Math.PI*D*timeStep));
+    private float maxDiffuse = 3 * wk_fmax;//for diffuse4, not used
     
     //diffuse based on height
     //not very good
